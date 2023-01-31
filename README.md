@@ -1,4 +1,4 @@
-# EzMesh
+<h1 align="center">🕸️ ezmesh</h1>
 
 <p align="center">the open source parametric CFD mesh generator</p>
 
@@ -16,7 +16,7 @@
 
 
 # About
-EzMesh is a declarative tool that parametrically generates meshes compliant with a variety of mesh formats with easy and configurable API on top of GMSH.
+ezmesh is a declarative tool that parametrically generates meshes compliant with a variety of mesh formats with easy and configurable API on top of GMSH.
 
 
 # Install
@@ -28,7 +28,7 @@ pip install git+https://github.com/Turbodesigner/ezmesh.git#egg=ezmesh
 See more examples in [examples](/examples) directory
 ## Inviscid Wedge
 ```python
-from ezmesh.mesh import Mesh, CurveLoop, PlaneSurface
+from ezmesh import Mesh, CurveLoop, PlaneSurface
 import numpy as np
 
 with Mesh() as mesh:
