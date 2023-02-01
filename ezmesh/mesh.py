@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Iterable, Union
 import numpy as np
 import numpy.typing as npt
 import gmsh
@@ -86,7 +86,7 @@ class CurveLoop(MeshTransaction):
     mesh_size: Union[float, List[float]]
     "Mesh size for points, If list, must be same length as coords."
 
-    labels: Dict[str, Union[List[Union[Line, int]], Literal["all"]]] = field(default_factory=dict)
+    labels: Dict[str, Union[Iterable[Union[Line, int]], Literal["all"]]] = field(default_factory=dict)
     "Label for physical group lines"
 
     fields: List[Field] = field(default_factory=list)
@@ -263,7 +263,6 @@ class BoundaryLayer(Field):
         super().after_sync(curve_loop)
 
 
-
 class Mesh:
     def __enter__(self):
         gmsh.initialize()
@@ -272,10 +271,18 @@ class Mesh:
     def __exit__(self, exc_type, exc_val, exc_tb):
         gmsh.finalize()
 
-    def generate(self, transaction: MeshTransaction):
-        transaction.before_sync()
+    def generate(self, transactions: Union[MeshTransaction, List[MeshTransaction]]):
+        if isinstance(transactions, list):
+            for transaction in transactions:
+                transaction.before_sync()
+        else:
+            transactions.before_sync()
         gmsh.model.geo.synchronize()
-        transaction.after_sync()
+        if isinstance(transactions, list):
+            for transaction in transactions:
+                transaction.after_sync()
+        else:
+            transactions.after_sync()
         gmsh.model.mesh.generate()
         gmsh.option.set_number("Mesh.SaveAll", 1)
 
