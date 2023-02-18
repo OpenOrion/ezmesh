@@ -1,7 +1,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, Optional
 import numpy.typing as npt
 import numpy as np
 
@@ -19,8 +19,6 @@ class ElementType(Enum):
 class Mesh:
     dim: int
     elements: List[npt.NDArray[np.uint16]]
-    element_tags: List[np.uint16]
     element_types: List[ElementType]
-    node_points: npt.NDArray[np.float64]
-    node_tags: npt.NDArray[np.uint16]
-    groups: Dict[str, npt.NDArray[np.uint16]]
+    points: npt.NDArray[np.float64]
+    markers: Dict[str, List[npt.NDArray[np.uint16]]]

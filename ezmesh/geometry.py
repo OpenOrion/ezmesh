@@ -1,11 +1,9 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Iterable, Union
-import numpy as np
+from typing import Dict, List, Literal, Optional, Iterable, Union
 import numpy.typing as npt
 import gmsh
-
-from ezmesh.mesh import ElementType, Mesh
+from .importers import import_from_gmsh
 
 
 class DimType(Enum):
@@ -13,7 +11,6 @@ class DimType(Enum):
     CURVE = 1
     SURFACE = 2
     VOLUME = 3
-
 
 
 class MeshTransaction:
@@ -290,53 +287,6 @@ class Geometry:
             transactions.after_sync()
         gmsh.model.mesh.generate()
         gmsh.option.set_number("Mesh.SaveAll", 1)
-
-    def get_mesh(self) -> Mesh:
-        dim = gmsh.model.getDimension()
-        elements: List[npt.NDArray[np.uint16]] = []
-        element_tags: List[np.uint16] = []
-        element_types: List[ElementType] = []
-
-        node_tags, node_points_concatted, _ = gmsh.model.mesh.getNodes()
-        node_tags = np.asarray(node_tags)
-        node_points = np.array(node_points_concatted, dtype=np.float64).reshape((-1, 3))
-        
-        grouped_concatted_elements = gmsh.model.mesh.getElements()
-        for element_type_value, grouped_element_tags, grouped_node_tags_concatted in zip(*grouped_concatted_elements):
-            element_tags += list(grouped_element_tags)
-            
-            num_nodes = gmsh.model.mesh.getElementProperties(element_type_value)[3]
-            group_elements = np.array(grouped_node_tags_concatted, dtype=np.uint16).reshape((-1, num_nodes)) - 1
-            elements += list(group_elements)
-            element_types += [ElementType(element_type_value)] * len(elements)
-
-        # get physical groups
-        groups: Dict[str, npt.NDArray[np.uint16]] = {}
-        physical_groups = gmsh.model.getPhysicalGroups()
-        for group_dim, group_tag in physical_groups:
-            name = gmsh.model.getPhysicalName(group_dim, group_tag)
-            entities = gmsh.model.getEntitiesForPhysicalGroup(group_dim, group_tag)
-            for entity in entities:
-                grouped_concatted_elements = gmsh.model.mesh.getElements(group_dim, tag=entity)
-                assert len(grouped_concatted_elements[0]) == 1, "There should only be one group"
-                group_element_type, group_node_tags_concatted = grouped_concatted_elements[0][0], grouped_concatted_elements[2][0]
-                assert group_element_type == ElementType.LINE.value, "All elements in a group must be a line"
-                group_elements = np.array(group_node_tags_concatted, dtype=np.uint16).reshape((-1, 2)) - 1
-                    
-                if name in groups:
-                    groups[name] = np.concatenate((groups[name], group_elements))
-                else:
-                    groups[name] = np.asarray(group_elements)
-
-        return Mesh(
-            dim,
-            elements,
-            element_tags,
-            element_types,
-            node_points,
-            node_tags,
-            groups
-        )
-    
+        return import_from_gmsh(gmsh.model)
     def write(self, filename: str):
         gmsh.write(filename)

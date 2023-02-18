@@ -28,10 +28,10 @@ pip install git+https://github.com/Turbodesigner/ezmesh.git#egg=ezmesh
 See more examples in [examples](/examples) directory
 ## Inviscid Wedge
 ```python
-from ezmesh import Mesh, CurveLoop, PlaneSurface
+from ezmesh import CurveLoop, PlaneSurface, Geometry, visualize_mesh
 import numpy as np
 
-with Mesh() as mesh:
+with Geometry() as geo:
     wedge_coords = np.array([[0, 1], [1.5, 1], [1.5, 0.2], [0.5, 0], [0, 0]])
     wedge_curve_loop = CurveLoop(
         wedge_coords, 
@@ -50,11 +50,19 @@ with Mesh() as mesh:
         }
     )
     surface = PlaneSurface(wedge_curve_loop, is_quad_mesh=True, transfinite_corners=[0,1,2,4])
-    mesh.generate(surface)
-    mesh.write("mesh_wedge_inv.su2")
+    mesh = geo.generate(surface)
+    visualize_mesh(mesh)
+    geo.write("mesh_wedge_inv.su2")
 ```
 
-![Inviscid Wedge](./assets/inviscid_wedge_mesh.png)
+## Visualize Mesh
+```python
+from ezmesh import import_from_file
+from ezmesh import visualize_mesh
+mesh = import_from_file("mesh_wedge_inv.su2")
+visualize_mesh(mesh)
+```
+![Inviscid Wedge](./assets/wedge_visualization.png)
 
 
 # Devlopement Setup

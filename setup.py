@@ -12,6 +12,7 @@ setup(
    install_requires=[
     "numpy",
     "gmsh",
-    "pythreejs"
+    "pythreejs",
+    "su2fmt @ git+https://github.com/Turbodesigner/su2fmt.git"
    ]
 )
