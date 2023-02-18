@@ -11,6 +11,7 @@ setup(
    packages=['ezmesh'],
    install_requires=[
     "numpy",
-    "gmsh"
+    "gmsh",
+    "pythreejs"
    ]
 )
