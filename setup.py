@@ -11,6 +11,9 @@ setup(
    packages=['ezmesh'],
    install_requires=[
     "numpy",
-    "gmsh"
+    "gmsh",
+    "ipywidgets==7.6"
+    "pythreejs",
+    "su2fmt @ git+https://github.com/Turbodesigner/su2fmt.git"
    ]
 )
