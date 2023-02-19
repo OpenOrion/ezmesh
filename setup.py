@@ -8,7 +8,7 @@ setup(
    description='the open source parametric CFD mesh generator',
    author='Afshawn Lotfi',
    author_email='',
-   packages=['ezmesh'],
+   packages=['ezmesh', 'ezmesh.utils'],
    install_requires=[
     "numpy",
     "gmsh",
