@@ -190,8 +190,6 @@ class PlaneSurface(MeshTransaction):
                 curve_loop_tags.append(curve_loop.tag)
             self.tag = gmsh.model.geo.add_plane_surface(curve_loop_tags)
 
-            if self.is_quad_mesh: 
-                gmsh.model.mesh.set_recombine(self.tag, 2)  # type: ignore
         super().before_sync()
 
     def after_sync(self):
@@ -209,7 +207,9 @@ class PlaneSurface(MeshTransaction):
                 for corner in self.transfinite_corners
             ]
             gmsh.model.mesh.set_transfinite_surface(self.tag, cornerTags=corner_tags)
-
+            
+            if self.is_quad_mesh: 
+                gmsh.model.mesh.set_recombine(2, self.tag)  # type: ignore
         super().after_sync()
 
 
@@ -233,7 +233,7 @@ class BoundaryLayer(Field):
     intersect_metrics: bool = False
     "intersect metrics of all surfaces"
     
-    quads: bool = False
+    is_quad_mesh: bool = False
     "generate recombined elements in the boundary layer"
 
 
@@ -248,8 +248,8 @@ class BoundaryLayer(Field):
                 gmsh.model.mesh.field.setNumber(self.tag, "AnisoMax", self.aniso_max)
             if self.intersect_metrics:
                 gmsh.model.mesh.field.setNumber(self.tag, "IntersectMetrics", self.intersect_metrics)
-            if self.quads:
-                gmsh.model.mesh.field.setNumber(self.tag, "Quads", int(self.quads))
+            if self.is_quad_mesh:
+                gmsh.model.mesh.field.setNumber(self.tag, "Quads", int(self.is_quad_mesh))
             if self.hfar:
                 gmsh.model.mesh.field.setNumber(self.tag, "hfar", self.hfar)
             if self.hwall_n:
