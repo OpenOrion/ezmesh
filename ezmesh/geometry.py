@@ -17,6 +17,45 @@ class DimType(Enum):
     VOLUME = 3
 
 
+def get_points_and_lines(
+    coords: npt.NDArray[np.float64],
+    mesh_size: Union[float, List[float]],
+    labels: Optional[Union[List[str], str]] = None,
+    cell_counts: Optional[Union[List[int], int]] = None,
+    mesh_types: Optional[Union[List[str], str]] = None,
+    mesh_coeffs: Optional[Union[float, List[float]]] = None,
+):
+    lines = []
+    points: List[Point] = []
+    line_index = 0
+    for i in range(len(coords) + 1):
+        # getting mesh size for point
+        mesh_size = mesh_size[i] if isinstance(mesh_size, List) else mesh_size
+
+        # adding points
+        if i == len(coords):
+            point = points[0]
+        else:
+            coord = coords[i]
+            point = Point(coord, mesh_size)
+            points.append(point)
+
+        # adding lines to connect points
+        if i > 0:
+            label = (labels if isinstance(labels, str) else labels[line_index]) if labels else None
+            if cell_counts:
+                cell_count = cell_counts[line_index] if isinstance(cell_counts, List) else cell_counts
+                mesh_type = (mesh_types[line_index] if isinstance(mesh_types, List) else mesh_types) if mesh_types else "Progression"
+                mesh_coeff = (mesh_coeffs[line_index] if isinstance(mesh_coeffs, List) else mesh_coeffs) if mesh_coeffs else 1.0
+                line = TransfiniteLine(start=points[i-1], end=point, label=label, cell_count=cell_count, mesh_type=mesh_type, coeff=mesh_coeff)
+            else:
+                line = Line(start=points[i-1], end=point, label=label)
+            lines.append(line)
+            line_index += 1
+
+    return points, lines
+
+
 class MeshTransaction:
     def __init__(self) -> None:
         self.tag: Optional[int] = None
@@ -90,16 +129,6 @@ class Line(MeshTransaction):
             self.tag = gmsh.model.geo.add_line(self.start.tag, self.end.tag)
         super().before_sync()
 
-    def after_sync(self):
-        if not self.after_sync_initiated:
-            if self.label:
-                print(self.label)
-                physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, self.tag)
-                gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, self.label)
-
-        return super().after_sync()
-
-
 
 @dataclass(kw_only=True)
 class TransfiniteLine(Line):
@@ -109,7 +138,7 @@ class TransfiniteLine(Line):
     mesh_type: str = "Progression"
     "mesh type for the line"
 
-    coef: float = 1.0
+    coeff: float = 1.0
     "coefficient for the line"
 
     def __post_init__(self):
@@ -121,7 +150,7 @@ class TransfiniteLine(Line):
                 self.tag,
                 self.cell_count+1,
                 self.mesh_type,
-                self.coef
+                self.coeff
             )
         super().after_sync()
 
@@ -144,8 +173,7 @@ class CurveLoop(MeshTransaction):
         if not self.before_sync_initiated:
             for line in self.lines:
                 line.before_sync()
-                assert line.tag is not None
-                self.line_tags.append(line.tag)
+                self.line_tags.append(cast(int, line.tag))
             self.tag = gmsh.model.geo.add_curve_loop(self.line_tags)
             for field in self.fields:
                 field.before_sync(self)
@@ -153,35 +181,25 @@ class CurveLoop(MeshTransaction):
         super().before_sync()
 
     def after_sync(self):
-        for field in self.fields:
-            field.after_sync(self)
+        if not self.after_sync_initiated:
+
+            line_group_tags: Dict[str, List[int]] = {}
+            for line in self.lines:
+                if line.label:
+                    if line.label not in line_group_tags:
+                        line_group_tags[line.label] = []
+                    line_group_tags[line.label].append(cast(int, line.tag))
+                line.after_sync()
+
+            for (label, group_tags) in line_group_tags.items():
+                physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, group_tags)
+                gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
+
+            for field in self.fields:
+                field.after_sync(self)
 
         super().after_sync()
 
-    @classmethod
-    def from_coords(
-        cls,
-        coords: npt.NDArray[np.float64],
-        mesh_size: Union[float, List[float]],
-        is_closed=False,
-        label: Optional[str] = None
-    ):
-        lines = []
-        points: List[Point] = []
-        for i, coord in enumerate(coords):
-            # getting mesh size for point
-            mesh_size = mesh_size[i] if isinstance(mesh_size, List) else mesh_size
-
-            # adding points
-            points.append(Point(coord, mesh_size))
-
-            # adding lines to connect points
-            if i > 0:
-                lines.append(Line(start=points[i-1], end=points[i], label=label))
-            if i == len(coords) - 1 and is_closed:
-                lines.append(Line(start=points[i], end=points[0], label=label))
-
-        return CurveLoop(lines=lines)
 
 @dataclass(kw_only=True)
 class PlaneSurface(MeshTransaction):
@@ -227,6 +245,7 @@ class PlaneSurface(MeshTransaction):
                 gmsh.model.mesh.set_recombine(2, self.tag)  # type: ignore
         super().after_sync()
 
+
 @dataclass(kw_only=True)
 class TransfinitePlaneSurface(PlaneSurface):
     corners: List[Point]
@@ -242,6 +261,7 @@ class TransfinitePlaneSurface(PlaneSurface):
             gmsh.model.mesh.set_transfinite_surface(self.tag, cornerTags=corner_tags)
 
         super().after_sync()
+
 
 @dataclass
 class BoundaryLayer(Field):
