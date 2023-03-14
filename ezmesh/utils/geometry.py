@@ -1,63 +1,36 @@
-import numpy as np
+from typing import Iterable, Optional, TypeVar, Union, List, Dict
 
-def generate_circle(r, num_points=100):
-    theta = np.linspace(0, 2*np.pi, num_points)
-    x = r * np.cos(theta)
-    y = r * np.sin(theta)
-    return np.column_stack((x, y))
+T = TypeVar('T')
+LinePropertyType = Union[List[T], T, Dict[str, T]]
 
-def generate_naca4_airfoil(naca_string: str, num_points: int = 100) -> np.ndarray:
 
-    """generates NACA4 coordinates
+def get_group_name(label: str) -> str:
+    if "/" in label:
+        return label.split("/")[0]
+    return label
 
-    Parameters
-    ==========
 
-    naca_string: str
-        NACA4 string
-
-    num_points: int
-        number of points to generate
-    """
-    M = int(naca_string[0]) / 100
-    P = int(naca_string[1]) / 10
-    XX = int(naca_string[2:]) / 100
-
-    # camber line
-    beta = np.linspace(0.0,np.pi, num_points)
-    xc = 0.5*(1.0-np.cos(beta))
-
-    # thickness distribution from camber line
-    a0 = 0.2969
-    a1 = -0.1260
-    a2 = -0.3516
-    a3 = 0.2843
-    a4 = -0.1036
-    yt = 5.0*XX*(np.sqrt(xc)*a0 + xc**4*a4 + xc**3*a3 + xc**2*a2 + xc*a1)
-    
-    # camber line slope
-    if P == 0:
-        xl = xu = xc
-        yu = yt
-        yl = -yt
-
+def get_line_property(property: Optional[LinePropertyType[T]], index: int, label: Optional[str] = None) -> Optional[T]:
+    if property is None:
+        return None
+    elif isinstance(property, list):
+        return property[index]
+    elif isinstance(property, dict):
+        if label is None:
+            return None
+        label_wildcard = f"{get_group_name(label)}/*"
+        if label in property:
+            return property[label]
+        elif label_wildcard in property:
+            return property[label_wildcard]
+        return None
     else:
-        yc1 = M*(-xc**2 + 2*xc*P)/P**2
-        yc2 = M*(-xc**2 + 2*xc*P - 2*P + 1)/(1 - P)**2
-        yc = (np.select([np.logical_and.reduce((np.greater_equal(xc, 0),np.less(xc, P))),np.logical_and.reduce((np.greater_equal(xc, P),np.less_equal(xc, 1))),True], [yc1,yc2,1], default=np.nan))
+        return property
 
-        dyc1dx = M*(-2*xc + 2*P)/P**2
-        dyc2dx = M*(-2*xc + 2*P)/(1 - P)**2
-        dycdx = (np.select([np.logical_and.reduce((np.greater_equal(xc, 0),np.less(xc, P))),np.logical_and.reduce((np.greater_equal(xc, P),np.less_equal(xc, 1))),True], [dyc1dx,dyc2dx,1], default=np.nan))
-        theta = np.arctan(dycdx)
-        
-        xu = xc - yt*np.sin(theta)
-        yu = yc + yt*np.cos(theta)
-        xl = xc + yt*np.sin(theta)
-        yl = yc - yt*np.cos(theta)
 
-    # thickness lines
-    x = np.concatenate((xu[1:-1], xl[::-1]))
-    y = np.concatenate((yu[1:-1], yl[::-1]))
-
-    return np.column_stack((x, y))
+def get_selected_labels(selector_label: str, all_labels: List[str]) -> Iterable[str]:
+    if selector_label is None:
+        return []
+    if "/*" in selector_label:
+        return filter(lambda x: x.startswith(selector_label.replace("*", "")), all_labels)
+    return [selector_label]

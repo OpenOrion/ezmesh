@@ -4,6 +4,8 @@ from typing import Dict, List, Literal, Optional, Iterable, Tuple, Union, cast
 import numpy as np
 import numpy.typing as npt
 import gmsh
+
+from ezmesh.utils.geometry import LinePropertyType, get_line_property, get_group_name
 from .importers import import_from_gmsh
 
 Number = Union[int, float]
@@ -15,8 +17,6 @@ class DimType(Enum):
     CURVE = 1
     SURFACE = 2
     VOLUME = 3
-
-
 
 
 class MeshTransaction:
@@ -146,15 +146,16 @@ class CurveLoop(MeshTransaction):
     def after_sync(self):
         if not self.after_sync_initiated:
 
-            line_group_tags: Dict[str, List[int]] = {}
+            line_group_names: Dict[str, List[int]] = {}
             for line in self.lines:
                 if line.label:
-                    if line.label not in line_group_tags:
-                        line_group_tags[line.label] = []
-                    line_group_tags[line.label].append(cast(int, line.tag))
+                    group_name = get_group_name(line.label)
+                    if group_name not in line_group_names:
+                        line_group_names[group_name] = []
+                    line_group_names[group_name].append(cast(int, line.tag))
                 line.after_sync()
 
-            for (label, group_tags) in line_group_tags.items():
+            for (label, group_tags) in line_group_names.items():
                 physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, group_tags)
                 gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
 
@@ -169,9 +170,9 @@ class CurveLoop(MeshTransaction):
         mesh_size: Union[float, List[float]],
         labels: Optional[Union[List[str], str]] = None,
         fields: List[Field] = [],
-        cell_counts: Optional[Union[List[int], int]] = None,
-        mesh_types: Optional[Union[List[str], str]] = None,
-        mesh_coeffs: Optional[Union[float, List[float]]] = None,
+        cell_counts: Optional[LinePropertyType[int]] = None,
+        mesh_types: Optional[LinePropertyType[str]] = None,
+        mesh_coeffs: Optional[LinePropertyType[float]] = None,
     ):
         lines = []
         points: List[Point] = []
@@ -190,11 +191,11 @@ class CurveLoop(MeshTransaction):
 
             # adding lines to connect points
             if i > 0:
-                label = (labels if isinstance(labels, str) else labels[line_index]) if labels else None
-                if cell_counts:
-                    cell_count = cell_counts[line_index] if isinstance(cell_counts, List) else cell_counts
-                    mesh_type = (mesh_types[line_index] if isinstance(mesh_types, List) else mesh_types) if mesh_types else "Progression"
-                    mesh_coeff = (mesh_coeffs[line_index] if isinstance(mesh_coeffs, List) else mesh_coeffs) if mesh_coeffs else 1.0
+                label = get_line_property(labels, line_index)
+                cell_count = get_line_property(cell_counts, line_index, label)
+                if cell_count:
+                    mesh_type = get_line_property(mesh_types, line_index, label) or "Progression"
+                    mesh_coeff = get_line_property(mesh_coeffs, line_index, label) or 1.0
                     line = TransfiniteLine(start=points[i-1], end=point, label=label, cell_count=cell_count, mesh_type=mesh_type, coeff=mesh_coeff)
                 else:
                     line = Line(start=points[i-1], end=point, label=label)
@@ -252,6 +253,10 @@ class PlaneSurface(MeshTransaction):
 @dataclass(kw_only=True)
 class TransfinitePlaneSurface(PlaneSurface):
     corners: List[Point]
+    "corners of transfinite surface"
+
+    arrangement: str = "Left"
+    "arrangement of transfinite surface"
 
     def __post_init__(self):
         return super().__post_init__()
@@ -261,7 +266,7 @@ class TransfinitePlaneSurface(PlaneSurface):
             corner_tags: List[int] = []
             for corner in self.corners:
                 corner_tags.append(cast(int, corner.tag))
-            gmsh.model.mesh.set_transfinite_surface(self.tag, cornerTags=corner_tags)
+            gmsh.model.mesh.set_transfinite_surface(self.tag, self.arrangement, cornerTags=corner_tags)
 
         super().after_sync()
 
