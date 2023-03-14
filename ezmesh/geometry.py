@@ -17,43 +17,6 @@ class DimType(Enum):
     VOLUME = 3
 
 
-def get_points_and_lines(
-    coords: npt.NDArray[np.float64],
-    mesh_size: Union[float, List[float]],
-    labels: Optional[Union[List[str], str]] = None,
-    cell_counts: Optional[Union[List[int], int]] = None,
-    mesh_types: Optional[Union[List[str], str]] = None,
-    mesh_coeffs: Optional[Union[float, List[float]]] = None,
-):
-    lines = []
-    points: List[Point] = []
-    line_index = 0
-    for i in range(len(coords) + 1):
-        # getting mesh size for point
-        mesh_size = mesh_size[i] if isinstance(mesh_size, List) else mesh_size
-
-        # adding points
-        if i == len(coords):
-            point = points[0]
-        else:
-            coord = coords[i]
-            point = Point(coord, mesh_size)
-            points.append(point)
-
-        # adding lines to connect points
-        if i > 0:
-            label = (labels if isinstance(labels, str) else labels[line_index]) if labels else None
-            if cell_counts:
-                cell_count = cell_counts[line_index] if isinstance(cell_counts, List) else cell_counts
-                mesh_type = (mesh_types[line_index] if isinstance(mesh_types, List) else mesh_types) if mesh_types else "Progression"
-                mesh_coeff = (mesh_coeffs[line_index] if isinstance(mesh_coeffs, List) else mesh_coeffs) if mesh_coeffs else 1.0
-                line = TransfiniteLine(start=points[i-1], end=point, label=label, cell_count=cell_count, mesh_type=mesh_type, coeff=mesh_coeff)
-            else:
-                line = Line(start=points[i-1], end=point, label=label)
-            lines.append(line)
-            line_index += 1
-
-    return points, lines
 
 
 class MeshTransaction:
@@ -199,6 +162,46 @@ class CurveLoop(MeshTransaction):
                 field.after_sync(self)
 
         super().after_sync()
+
+    @staticmethod
+    def from_coords(
+        coords: npt.NDArray[np.float64],
+        mesh_size: Union[float, List[float]],
+        labels: Optional[Union[List[str], str]] = None,
+        fields: List[Field] = [],
+        cell_counts: Optional[Union[List[int], int]] = None,
+        mesh_types: Optional[Union[List[str], str]] = None,
+        mesh_coeffs: Optional[Union[float, List[float]]] = None,
+    ):
+        lines = []
+        points: List[Point] = []
+        line_index = 0
+        for i in range(len(coords) + 1):
+            # getting mesh size for point
+            mesh_size = mesh_size[i] if isinstance(mesh_size, List) else mesh_size
+
+            # adding points
+            if i == len(coords):
+                point = points[0]
+            else:
+                coord = coords[i]
+                point = Point(coord, mesh_size)
+                points.append(point)
+
+            # adding lines to connect points
+            if i > 0:
+                label = (labels if isinstance(labels, str) else labels[line_index]) if labels else None
+                if cell_counts:
+                    cell_count = cell_counts[line_index] if isinstance(cell_counts, List) else cell_counts
+                    mesh_type = (mesh_types[line_index] if isinstance(mesh_types, List) else mesh_types) if mesh_types else "Progression"
+                    mesh_coeff = (mesh_coeffs[line_index] if isinstance(mesh_coeffs, List) else mesh_coeffs) if mesh_coeffs else 1.0
+                    line = TransfiniteLine(start=points[i-1], end=point, label=label, cell_count=cell_count, mesh_type=mesh_type, coeff=mesh_coeff)
+                else:
+                    line = Line(start=points[i-1], end=point, label=label)
+                lines.append(line)
+                line_index += 1
+
+        return CurveLoop(lines=lines, fields=fields)
 
 
 @dataclass(kw_only=True)
