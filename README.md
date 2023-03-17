@@ -20,36 +20,40 @@ ezmesh is a declarative tool that parametrically generates meshes compliant with
 
 
 # Install
+## Latest
 ```
 pip install git+https://github.com/Turbodesigner/ezmesh.git#egg=ezmesh
+```
+## Version 1
+```
+pip install git+https://github.com/Turbodesigner/ezmesh.git@1.0.0#egg=ezmesh
 ```
 
 # Example
 See more examples in [examples](/examples) directory
 ## Inviscid Wedge
 ```python
-from ezmesh import CurveLoop, PlaneSurface, Geometry, visualize_mesh
+from ezmesh import CurveLoop, TransfinitePlaneSurface, Geometry, TransfinitePlaneSurface, visualize_mesh
 import numpy as np
 
 with Geometry() as geo:
     wedge_coords = np.array([[0, 1], [1.5, 1], [1.5, 0.2], [0.5, 0], [0, 0]])
-    wedge_curve_loop = CurveLoop(
+    wedge_curve_loop = CurveLoop.from_coords(
         wedge_coords, 
-        mesh_size=0.05,
-        labels={
-            "upper":  [0],
-            "lower":  [2,3],
-            "inlet":  [4],
-            "outlet": [1],
-        },
-        transfinite_cell_counts={
-            150: [0],
-            200: [1,4],
-            100: [2],
-            50:  [3]
-        }
+        mesh_size = 0.05, 
+        labels=["upper", "outlet", "lower/1", "lower/2", "inlet"],
+        cell_counts=[150, 200, 100, 50, 200],
     )
-    surface = PlaneSurface(wedge_curve_loop, is_quad_mesh=True, transfinite_corners=[0,1,2,4])
+    surface = TransfinitePlaneSurface(
+        outlines=[wedge_curve_loop],
+        is_quad_mesh=True,
+        corners=[
+            wedge_curve_loop.points[0], 
+            wedge_curve_loop.points[1], 
+            wedge_curve_loop.points[2], 
+            wedge_curve_loop.points[4]
+        ]
+    )
     mesh = geo.generate(surface)
     visualize_mesh(mesh)
     geo.write("mesh_wedge_inv.su2")
