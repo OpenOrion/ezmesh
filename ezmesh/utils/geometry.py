@@ -1,7 +1,7 @@
 from typing import Iterable, Optional, TypeVar, Union, List, Dict
 
 T = TypeVar('T')
-LinePropertyType = Union[List[T], T, Dict[str, T]]
+PropertyType = Union[List[T], T, Dict[str, T]]
 
 
 def get_group_name(label: str) -> str:
@@ -10,7 +10,7 @@ def get_group_name(label: str) -> str:
     return label
 
 
-def get_line_property(property: Optional[LinePropertyType[T]], index: int, label: Optional[str] = None) -> Optional[T]:
+def get_property(property: Optional[PropertyType[T]], index: int, label: Optional[str] = None) -> Optional[T]:
     if property is None:
         return None
     elif isinstance(property, list):
