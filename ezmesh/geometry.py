@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Literal, Optional, Iterable, Tuple, Union, cast
+from typing import Dict, List, Optional, Iterable, Tuple, Union, cast
 import numpy as np
 import numpy.typing as npt
 import gmsh
 
-from ezmesh.utils.geometry import LinePropertyType, get_line_property, get_group_name
+from ezmesh.utils.geometry import PropertyType, get_property, get_group_name
 from .importers import import_from_gmsh
 
 Number = Union[int, float]
@@ -166,41 +166,58 @@ class CurveLoop(MeshTransaction):
 
     @staticmethod
     def from_coords(
-        coords: npt.NDArray[np.float64],
+        coordsOrGroups: Union[List[npt.NDArray[np.float64]], npt.NDArray[np.float64]],
         mesh_size: Union[float, List[float]],
+        groups: Optional[List[Iterable[npt.NDArray[np.float64]]]] = None,
         labels: Optional[Union[List[str], str]] = None,
         fields: List[Field] = [],
-        cell_counts: Optional[LinePropertyType[int]] = None,
-        mesh_types: Optional[LinePropertyType[str]] = None,
-        mesh_coeffs: Optional[LinePropertyType[float]] = None,
+        cell_counts: Optional[PropertyType[int]] = None,
+        mesh_types: Optional[PropertyType[str]] = None,
+        mesh_coeffs: Optional[PropertyType[float]] = None,
     ):
+        coords = np.concatenate(coordsOrGroups) if isinstance(coordsOrGroups, list) else coordsOrGroups
+        groups = groups if isinstance(groups, list) else None
+
         lines = []
         points: List[Point] = []
-        line_index = 0
+        property_index = 0
+        is_group = False
+        group_index = 0
         for i in range(len(coords) + 1):
             # getting mesh size for point
             mesh_size = mesh_size[i] if isinstance(mesh_size, List) else mesh_size
 
             # adding points
-            if i == len(coords):
-                point = points[0]
-            else:
+            if i < len(coords):
                 coord = coords[i]
-                point = Point(coord, mesh_size)
-                points.append(point)
+                end_point = Point(coord, mesh_size)
+                points.append(end_point)
+            else:
+                end_point = points[0]
 
             # adding lines to connect points
             if i > 0:
-                label = get_line_property(labels, line_index)
-                cell_count = get_line_property(cell_counts, line_index, label)
+                start_point = points[i-1]
+                label = get_property(labels, property_index)
+                cell_count = get_property(cell_counts, property_index, label)
                 if cell_count:
-                    mesh_type = get_line_property(mesh_types, line_index, label) or "Progression"
-                    mesh_coeff = get_line_property(mesh_coeffs, line_index, label) or 1.0
-                    line = TransfiniteLine(start=points[i-1], end=point, label=label, cell_count=cell_count, mesh_type=mesh_type, coeff=mesh_coeff)
+                    mesh_type = get_property(mesh_types, property_index, label) or "Progression"
+                    mesh_coeff = get_property(mesh_coeffs, property_index, label) or 1.0
+                    line = TransfiniteLine(start=start_point, end=end_point, label=label, cell_count=cell_count, mesh_type=mesh_type, coeff=mesh_coeff)
                 else:
-                    line = Line(start=points[i-1], end=point, label=label)
+                    line = Line(start=start_point, end=end_point, label=label)
                 lines.append(line)
-                line_index += 1
+
+                if groups and group_index < len(groups):
+                    group = np.asarray(groups[group_index])
+                    if (group[0] == start_point.coord).all():
+                        is_group = True
+                    if (group[-1] == end_point.coord).all():
+                        is_group = False
+                        group_index += 1
+
+                if not is_group:
+                    property_index += 1
 
         return CurveLoop(lines=lines, fields=fields)
 
