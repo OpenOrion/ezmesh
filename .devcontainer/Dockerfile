@@ -1,4 +1,4 @@
-ARG VARIANT="3.10-bullseye"
+ARG VARIANT="3.7"
 FROM mcr.microsoft.com/vscode/devcontainers/python:0-${VARIANT}
 
 # [Choice] Node.js version: none, lts/*, 16, 14, 12, 10
