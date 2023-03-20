@@ -33,7 +33,7 @@ pip install git+https://github.com/Turbodesigner/ezmesh.git@1.0.0#egg=ezmesh
 See more examples in [examples](/examples) directory
 ## Inviscid Wedge
 ```python
-from ezmesh import CurveLoop, TransfinitePlaneSurface, Geometry, TransfinitePlaneSurface, visualize_mesh
+from ezmesh import CurveLoop, Geometry, TransfinitePlaneSurface, visualize_mesh
 import numpy as np
 
 with Geometry() as geo:

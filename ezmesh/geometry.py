@@ -4,7 +4,6 @@ from typing import Dict, List, Optional, Iterable, Tuple, Union, cast
 import numpy as np
 import numpy.typing as npt
 import gmsh
-
 from ezmesh.utils.geometry import PropertyType, get_property, get_group_name
 from .importers import import_from_gmsh
 
@@ -70,7 +69,7 @@ class Point(MeshTransaction):
         super().before_sync()
 
 
-@dataclass(kw_only=True)
+@dataclass
 class Line(MeshTransaction):
     start: Point
     "starting point of line"
@@ -93,22 +92,27 @@ class Line(MeshTransaction):
         super().before_sync()
 
 
-@dataclass(kw_only=True)
+@dataclass
 class TransfiniteLine(Line):
-    cell_count: int
+    cell_count: Optional[int] = None
     "number of cells in the line"
 
-    mesh_type: str = "Progression"
+    mesh_type: Optional[str] = None
     "mesh type for the line"
 
-    coeff: float = 1.0
+    coeff: Optional[float] = None
     "coefficient for the line"
 
     def __post_init__(self):
         super().__post_init__()
+        if self.mesh_type is None:
+            self.mesh_type = "Progression"
+        if self.coeff is None:
+            self.coeff = 1.0
 
     def after_sync(self):
-        if not self.after_sync_initiated:
+        assert self.mesh_type and self.coeff
+        if not self.after_sync_initiated and self.cell_count:
             gmsh.model.mesh.set_transfinite_curve(
                 self.tag,
                 self.cell_count+1,
@@ -118,7 +122,7 @@ class TransfiniteLine(Line):
         super().after_sync()
 
 
-@dataclass(kw_only=True)
+@dataclass
 class CurveLoop(MeshTransaction):
     lines: List[Line]
     "Lines of curve"
@@ -145,7 +149,6 @@ class CurveLoop(MeshTransaction):
 
     def after_sync(self):
         if not self.after_sync_initiated:
-
             line_group_names: Dict[str, List[int]] = {}
             for line in self.lines:
                 if line.label:
@@ -200,19 +203,22 @@ class CurveLoop(MeshTransaction):
                 start_point = points[i-1]
                 label = get_property(labels, property_index)
                 cell_count = get_property(cell_counts, property_index, label)
-                if cell_count:
-                    mesh_type = get_property(mesh_types, property_index, label) or "Progression"
-                    mesh_coeff = get_property(mesh_coeffs, property_index, label) or 1.0
-                    line = TransfiniteLine(start=start_point, end=end_point, label=label, cell_count=cell_count, mesh_type=mesh_type, coeff=mesh_coeff)
-                else:
-                    line = Line(start=start_point, end=end_point, label=label)
+                line = TransfiniteLine(
+                    start=start_point,
+                    end=end_point,
+                    label=label,
+                    cell_count=cell_count,
+                    mesh_type=get_property(mesh_types, property_index, label),
+                    coeff=get_property(mesh_coeffs, property_index, label)
+                )
                 lines.append(line)
 
                 if groups and group_index < len(groups):
-                    group = np.asarray(groups[group_index])
-                    if (group[0] == start_point.coord).all():
+                    group_coords = np.asarray(groups[group_index])
+                    if (group_coords[0] == start_point.coord).all():
                         is_group = True
-                    if (group[-1] == end_point.coord).all():
+
+                    if (group_coords[-1] == end_point.coord).all():
                         is_group = False
                         group_index += 1
 
@@ -222,7 +228,7 @@ class CurveLoop(MeshTransaction):
         return CurveLoop(lines=lines, fields=fields)
 
 
-@dataclass(kw_only=True)
+@dataclass
 class PlaneSurface(MeshTransaction):
     outlines: List[CurveLoop]
     "outline curve loop that make up the surface"
@@ -235,9 +241,6 @@ class PlaneSurface(MeshTransaction):
 
     is_quad_mesh: bool = False
     "if true, surface mesh is made of quadralateral cells, else triangular cells"
-
-    transfinite_corners: Optional[List[Union[Point, int]]] = None
-    "corners of transfinite surface"
 
     def __post_init__(self):
         super().__init__()
@@ -267,9 +270,12 @@ class PlaneSurface(MeshTransaction):
         super().after_sync()
 
 
-@dataclass(kw_only=True)
+@dataclass
 class TransfinitePlaneSurface(PlaneSurface):
-    corners: List[Point]
+    """
+    A plane surface with transfinite meshing. Normal plane if corners are not defined.
+    """
+    corners: Optional[List[Point]] = None
     "corners of transfinite surface"
 
     arrangement: str = "Left"
@@ -279,7 +285,7 @@ class TransfinitePlaneSurface(PlaneSurface):
         return super().__post_init__()
 
     def after_sync(self):
-        if not self.after_sync_initiated:
+        if not self.after_sync_initiated and self.corners is not None:
             corner_tags: List[int] = []
             for corner in self.corners:
                 corner_tags.append(cast(int, corner.tag))
