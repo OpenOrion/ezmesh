@@ -1,15 +1,20 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Iterable, Tuple, Union, cast
+from typing import Dict, List, Optional, Tuple, Union, cast
 import numpy as np
 import numpy.typing as npt
 import gmsh
 from ezmesh.utils.geometry import PropertyType, get_property, get_group_name
 from .importers import import_from_gmsh
 
-Number = Union[int, float]
-PointCoordType = Union[npt.NDArray[np.float64], Tuple[Number, Number], List[Number]]
 
+Number = Union[int, float]
+SegmentType = Union["Line", "BSpline"]
+PointCoordType = Union[npt.NDArray[np.float64], Tuple[Number, Number], List[Number]]
+ListOrTuple = Union[List, Tuple]
+
+
+GroupType = Union[npt.NDArray[np.float64], Tuple["BSpline", List[npt.NDArray[np.float64]]]]
 
 class DimType(Enum):
     POINT = 0
@@ -33,7 +38,7 @@ class MeshTransaction:
         self.after_sync_initiated = True
 
 
-class Field(MeshTransaction):
+class CurveField(MeshTransaction):
     def __init__(self) -> None:
         super().__init__()
 
@@ -41,6 +46,17 @@ class Field(MeshTransaction):
         super().before_sync()
 
     def after_sync(self, curve_loop: "CurveLoop"):
+        super().after_sync()
+
+
+class SurfaceField(MeshTransaction):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def before_sync(self, surface: "PlaneSurface"):
+        super().before_sync()
+
+    def after_sync(self, surface: "PlaneSurface"):
         super().after_sync()
 
 
@@ -93,55 +109,64 @@ class Line(MeshTransaction):
 
 
 @dataclass
-class TransfiniteLine(Line):
-    cell_count: Optional[int] = None
-    "number of cells in the line"
+class BSpline(MeshTransaction):
+    ctrl_points: List[Point]
+    "control points of spline"
 
-    mesh_type: Optional[str] = None
-    "mesh type for the line"
-
-    coeff: Optional[float] = None
-    "coefficient for the line"
+    label: Optional[str] = None
+    "physical group label"
 
     def __post_init__(self):
-        super().__post_init__()
-        if self.mesh_type is None:
-            self.mesh_type = "Progression"
-        if self.coeff is None:
-            self.coeff = 1.0
+        super().__init__()
+        self.dim_type = DimType.CURVE
 
-    def after_sync(self):
-        assert self.mesh_type and self.coeff
-        if not self.after_sync_initiated and self.cell_count:
-            gmsh.model.mesh.set_transfinite_curve(
-                self.tag,
-                self.cell_count+1,
-                self.mesh_type,
-                self.coeff
-            )
-        super().after_sync()
+    def before_sync(self):
+        if not self.before_sync_initiated:
+            ctrl_point_tags = []
+            for ctrl_point in self.ctrl_points:
+                ctrl_point.before_sync()
+                ctrl_point_tags.append(ctrl_point.tag)
+            self.tag = gmsh.model.geo.add_bspline(ctrl_point_tags)
+        super().before_sync()
+
+    @staticmethod
+    def from_coords(
+        coords: npt.NDArray[np.float64],
+        mesh_size: Union[float, List[float]],
+        label: Optional[str] = None,
+    ) -> "BSpline":
+        ctrl_points = []
+        for i, coord in enumerate(coords):
+            mesh_size = mesh_size[i] if isinstance(mesh_size, list) else mesh_size
+            ctrl_points.append(Point(coord, mesh_size))
+        return BSpline(ctrl_points, label)
 
 
 @dataclass
 class CurveLoop(MeshTransaction):
-    lines: List[Line]
+    segments: List[SegmentType]
     "Lines of curve"
 
-    fields: List[Field] = field(default_factory=list)
+    fields: List[CurveField] = field(default_factory=list)
     "fields to be added to the curve loop"
 
     def __post_init__(self):
         super().__init__()
         self.dim_type = DimType.CURVE
-        self.line_tags: List[int] = []
-        self.points = [line.start for line in self.lines]
+        self.points = []
+        for segment in self.segments:
+            if isinstance(segment, BSpline):
+                self.points += segment.ctrl_points
+            else:
+                self.points.append(segment.start)
 
     def before_sync(self):
         if not self.before_sync_initiated:
-            for line in self.lines:
-                line.before_sync()
-                self.line_tags.append(cast(int, line.tag))
-            self.tag = gmsh.model.geo.add_curve_loop(self.line_tags)
+            segement_tags = []
+            for segment in self.segments:
+                segment.before_sync()
+                segement_tags.append(cast(int, segment.tag))
+            self.tag = gmsh.model.geo.add_curve_loop(segement_tags)
             for field in self.fields:
                 field.before_sync(self)
 
@@ -149,18 +174,18 @@ class CurveLoop(MeshTransaction):
 
     def after_sync(self):
         if not self.after_sync_initiated:
-            line_group_names: Dict[str, List[int]] = {}
-            for line in self.lines:
-                if line.label:
-                    group_name = get_group_name(line.label)
-                    if group_name not in line_group_names:
-                        line_group_names[group_name] = []
-                    line_group_names[group_name].append(cast(int, line.tag))
-                line.after_sync()
+            group_name_to_tags: Dict[str, List[int]] = {}
+            for segment in self.segments:
+                segment.after_sync()
+                if segment.label:
+                    name = get_group_name(segment.label)
+                    if name not in group_name_to_tags:
+                        group_name_to_tags[name] = []
+                    group_name_to_tags[name].append(cast(int, segment.tag))
 
-            for (label, group_tags) in line_group_names.items():
-                physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, group_tags)
-                gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
+            for (name, tags) in group_name_to_tags.items():
+                physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, tags)
+                gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, name)
 
             for field in self.fields:
                 field.after_sync(self)
@@ -169,63 +194,49 @@ class CurveLoop(MeshTransaction):
 
     @staticmethod
     def from_coords(
-        coordsOrGroups: Union[List[npt.NDArray[np.float64]], npt.NDArray[np.float64]],
-        mesh_size: Union[float, List[float]],
-        groups: Optional[List[Iterable[npt.NDArray[np.float64]]]] = None,
+        coordsOrGroups: Union[npt.NDArray[np.float64], List[GroupType]],
+        mesh_size: float,
         labels: Optional[Union[List[str], str]] = None,
-        fields: List[Field] = [],
-        cell_counts: Optional[PropertyType[int]] = None,
-        mesh_types: Optional[PropertyType[str]] = None,
-        mesh_coeffs: Optional[PropertyType[float]] = None,
+        fields: List[CurveField] = [],
     ):
-        coords = np.concatenate(coordsOrGroups) if isinstance(coordsOrGroups, list) else coordsOrGroups
-        groups = groups if isinstance(groups, list) else None
+        groups = coordsOrGroups if isinstance(coordsOrGroups, list) else [coordsOrGroups]
+        segments: List[SegmentType] = []
+        property_index: int = 0
 
-        lines = []
-        points: List[Point] = []
-        property_index = 0
-        is_group = False
-        group_index = 0
-        for i in range(len(coords) + 1):
-            # getting mesh size for point
-            mesh_size = mesh_size[i] if isinstance(mesh_size, List) else mesh_size
+        prev_point = None
+        first_point = None
+        for i, group in enumerate(groups):
 
-            # adding points
-            if i < len(coords):
-                coord = coords[i]
-                end_point = Point(coord, mesh_size)
-                points.append(end_point)
+            if isinstance(group, np.ndarray):
+                coords = group
+                for coord in coords:
+                    # adding points
+                    point = Point(coord, mesh_size)
+                    # adding lines to connect points
+                    if prev_point:
+                        label = get_property(labels, property_index)
+                        line = Line(prev_point, point, label)
+                        segments.append(line)
+                        property_index += 1
+
+                    if first_point is None:
+                        first_point = point
+                    prev_point = point
             else:
-                end_point = points[0]
-
-            # adding lines to connect points
-            if i > 0:
-                start_point = points[i-1]
+                assert group[0] == "BSpline"
+                ctrl_pnts = [Point(coord, mesh_size) for coord in group[1]]
                 label = get_property(labels, property_index)
-                cell_count = get_property(cell_counts, property_index, label)
-                line = TransfiniteLine(
-                    start=start_point,
-                    end=end_point,
-                    label=label,
-                    cell_count=cell_count,
-                    mesh_type=get_property(mesh_types, property_index, label),
-                    coeff=get_property(mesh_coeffs, property_index, label)
-                )
-                lines.append(line)
+                bspline = BSpline(ctrl_pnts, label)
+                segments.append(bspline)
+                property_index += 1
+                prev_point = ctrl_pnts[-1]
+                if first_point is None:
+                    first_point = ctrl_pnts[0]
 
-                if groups and group_index < len(groups):
-                    group_coords = np.asarray(groups[group_index])
-                    if (group_coords[0] == start_point.coord).all():
-                        is_group = True
+        assert prev_point and first_point, "No points found in curve loop"
+        segments.append(Line(prev_point, first_point, label=get_property(labels, property_index)))
 
-                    if (group_coords[-1] == end_point.coord).all():
-                        is_group = False
-                        group_index += 1
-
-                if not is_group:
-                    property_index += 1
-
-        return CurveLoop(lines=lines, fields=fields)
+        return CurveLoop(segments, fields)
 
 
 @dataclass
@@ -241,6 +252,9 @@ class PlaneSurface(MeshTransaction):
 
     is_quad_mesh: bool = False
     "if true, surface mesh is made of quadralateral cells, else triangular cells"
+
+    fields: List[SurfaceField] = field(default_factory=list)
+    "fields to be added to the surface"
 
     def __post_init__(self):
         super().__init__()
@@ -267,11 +281,14 @@ class PlaneSurface(MeshTransaction):
 
             if self.is_quad_mesh:
                 gmsh.model.mesh.set_recombine(2, self.tag)  # type: ignore
+
+            for field in self.fields:
+                field.after_sync(self)
         super().after_sync()
 
 
 @dataclass
-class TransfinitePlaneSurface(PlaneSurface):
+class TransfiniteSurfaceField(SurfaceField):
     """
     A plane surface with transfinite meshing. Normal plane if corners are not defined.
     """
@@ -282,20 +299,20 @@ class TransfinitePlaneSurface(PlaneSurface):
     "arrangement of transfinite surface"
 
     def __post_init__(self):
-        return super().__post_init__()
+        return super().__init__()
 
-    def after_sync(self):
+    def after_sync(self, surface: "PlaneSurface"):
         if not self.after_sync_initiated and self.corners is not None:
             corner_tags: List[int] = []
             for corner in self.corners:
                 corner_tags.append(cast(int, corner.tag))
-            gmsh.model.mesh.set_transfinite_surface(self.tag, self.arrangement, cornerTags=corner_tags)
+            gmsh.model.mesh.set_transfinite_surface(surface.tag, self.arrangement, cornerTags=corner_tags)
 
-        super().after_sync()
+        super().after_sync(surface)
 
 
 @dataclass
-class BoundaryLayer(Field):
+class BoundaryLayerField(CurveField):
     aniso_max: Optional[float] = None
     "threshold angle for creating a mesh fan in the boundary layer"
 
@@ -323,7 +340,8 @@ class BoundaryLayer(Field):
     def after_sync(self, curve_loop: CurveLoop):
         if not self.after_sync_initiated:
             self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
-            gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', curve_loop.line_tags)
+            segement_tags = [segement.tag for segement in curve_loop.segments]
+            gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', segement_tags)
             if self.aniso_max:
                 gmsh.model.mesh.field.setNumber(self.tag, "AnisoMax", self.aniso_max)
             if self.intersect_metrics:
@@ -340,6 +358,33 @@ class BoundaryLayer(Field):
                 gmsh.model.mesh.field.setNumber(self.tag, "thickness", self.thickness)
 
             gmsh.model.mesh.field.setAsBoundaryLayer(self.tag)
+        super().after_sync(curve_loop)
+
+
+@dataclass
+class TransfiniteCurveField(CurveField):
+    node_counts: PropertyType[int]
+    "number per curve"
+
+    mesh_types: Optional[PropertyType[str]] = None
+    "mesh type for each curve"
+
+    coefs: Optional[PropertyType[float]] = None
+    "coefficients for each curve"
+
+    def __post_init__(self):
+        super().__init__()
+        self.dim_type = DimType.CURVE
+
+    def after_sync(self, curve_loop: CurveLoop):
+        if not self.after_sync_initiated:
+            for i, segment in enumerate(curve_loop.segments):
+                gmsh.model.mesh.set_transfinite_curve(
+                    segment.tag,
+                    numNodes=get_property(self.node_counts, i, segment.label)+1,
+                    meshType=get_property(self.mesh_types, i, segment.label, "Progression"),
+                    coef=get_property(self.coefs, i, segment.label, 1.0)
+                )
         super().after_sync(curve_loop)
 
 

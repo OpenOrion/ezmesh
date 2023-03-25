@@ -10,19 +10,19 @@ def get_group_name(selector: str) -> str:
     return selector
 
 
-def get_property(property: Optional[PropertyType[T]], index: int, selector: Optional[str] = None) -> Optional[T]:
+def get_property(property: Optional[PropertyType[T]], index: int, selector: Optional[str] = None, default: T = None) -> T:
     if property is None:
-        return None
+        return default
     elif isinstance(property, list):
         return property[index]
     elif isinstance(property, dict):
         if selector is None:
-            return None
+            return default
         label_wildcard = f"{get_group_name(selector)}/*"
         if selector in property:
             return property[selector]
         elif label_wildcard in property:
             return property[label_wildcard]
-        return None
+        return default
     else:
         return property
