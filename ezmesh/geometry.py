@@ -122,6 +122,8 @@ class Curve(MeshTransaction):
     def __post_init__(self):
         super().__init__()
         self.dim_type = DimType.CURVE
+        self.start = self.ctrl_points[0]
+        self.end = self.ctrl_points[-1]
 
     def before_sync(self):
         if not self.before_sync_initiated:
@@ -167,11 +169,22 @@ class CurveLoop(MeshTransaction):
         super().__init__()
         self.dim_type = DimType.CURVE
         self.points = []
+        self.segment_groups: Dict[str, List[SegmentType]] = {}
+
         for segment in self.segments:
             if isinstance(segment, Curve):
                 self.points += segment.ctrl_points
             else:
                 self.points.append(segment.start)
+            
+            if segment.label:
+                name = get_group_name(segment.label)
+                if name not in self.segment_groups:
+                    self.segment_groups[name] = []
+                self.segment_groups[name].append(segment)
+
+    def get_points(self, group_name: str):
+        return [self.segment_groups[group_name][0].start, self.segment_groups[group_name][-1].end]
 
     def before_sync(self):
         if not self.before_sync_initiated:
@@ -187,17 +200,12 @@ class CurveLoop(MeshTransaction):
 
     def after_sync(self):
         if not self.after_sync_initiated:
-            group_name_to_tags: Dict[str, List[int]] = {}
-            for segment in self.segments:
-                segment.after_sync()
-                if segment.label:
-                    name = get_group_name(segment.label)
-                    if name not in group_name_to_tags:
-                        group_name_to_tags[name] = []
-                    group_name_to_tags[name].append(cast(int, segment.tag))
-
-            for (name, tags) in group_name_to_tags.items():
-                physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, tags)
+            for (name, segments) in self.segment_groups.items():
+                segment_tags = []
+                for segment in segments:
+                    segment.after_sync()
+                    segment_tags.append(segment.tag)
+                physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, segment_tags)
                 gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, name)
 
             for field in self.fields:
@@ -244,9 +252,9 @@ class CurveLoop(MeshTransaction):
                 curve = Curve(ctrl_pnts, type, label)
                 segments.append(curve)
                 property_index += 1
-                prev_point = ctrl_pnts[-1]
+                prev_point = curve.end
                 if first_point is None:
-                    first_point = ctrl_pnts[0]
+                    first_point = curve.start
 
         assert prev_point and first_point, "No points found in curve loop"
         segments.append(Line(prev_point, first_point, label=get_property(labels, property_index)))
