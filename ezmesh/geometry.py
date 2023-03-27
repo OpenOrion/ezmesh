@@ -9,12 +9,12 @@ from .importers import import_from_gmsh
 
 
 Number = Union[int, float]
-SegmentType = Union["Line", "BSpline"]
+SegmentType = Union["Line", "Curve"]
 PointCoordType = Union[npt.NDArray[np.float64], Tuple[Number, Number], List[Number]]
 ListOrTuple = Union[List, Tuple]
 
 
-GroupType = Union[npt.NDArray[np.float64], Tuple["BSpline", List[npt.NDArray[np.float64]]]]
+GroupType = Union[npt.NDArray[np.float64], Tuple[str, npt.NDArray[np.float64]]]
 
 class DimType(Enum):
     POINT = 0
@@ -109,9 +109,12 @@ class Line(MeshTransaction):
 
 
 @dataclass
-class BSpline(MeshTransaction):
+class Curve(MeshTransaction):
     ctrl_points: List[Point]
     "control points of spline"
+
+    type: str
+    "type of curve"
 
     label: Optional[str] = None
     "physical group label"
@@ -126,20 +129,30 @@ class BSpline(MeshTransaction):
             for ctrl_point in self.ctrl_points:
                 ctrl_point.before_sync()
                 ctrl_point_tags.append(ctrl_point.tag)
-            self.tag = gmsh.model.geo.add_bspline(ctrl_point_tags)
+            
+            if self.type == "BSpline":
+                self.tag = gmsh.model.geo.add_bspline(ctrl_point_tags)
+            elif self.type == "Spline":
+                self.tag = gmsh.model.geo.add_spline(ctrl_point_tags)
+            elif self.type == "Bezier":
+                self.tag = gmsh.model.geo.add_bezier(ctrl_point_tags)
+            else:
+                raise ValueError(f"Curve type {self.type} not specified")
+
         super().before_sync()
 
     @staticmethod
     def from_coords(
         coords: npt.NDArray[np.float64],
         mesh_size: Union[float, List[float]],
+        type: str,
         label: Optional[str] = None,
-    ) -> "BSpline":
+    ) -> "Curve":
         ctrl_points = []
         for i, coord in enumerate(coords):
             mesh_size = mesh_size[i] if isinstance(mesh_size, list) else mesh_size
             ctrl_points.append(Point(coord, mesh_size))
-        return BSpline(ctrl_points, label)
+        return Curve(ctrl_points, type, label)
 
 
 @dataclass
@@ -155,7 +168,7 @@ class CurveLoop(MeshTransaction):
         self.dim_type = DimType.CURVE
         self.points = []
         for segment in self.segments:
-            if isinstance(segment, BSpline):
+            if isinstance(segment, Curve):
                 self.points += segment.ctrl_points
             else:
                 self.points.append(segment.start)
@@ -205,7 +218,7 @@ class CurveLoop(MeshTransaction):
 
         prev_point = None
         first_point = None
-        for i, group in enumerate(groups):
+        for group in groups:
 
             if isinstance(group, np.ndarray):
                 coords = group
@@ -223,11 +236,13 @@ class CurveLoop(MeshTransaction):
                         first_point = point
                     prev_point = point
             else:
-                assert group[0] == "BSpline"
+                type = group[0]
                 ctrl_pnts = [Point(coord, mesh_size) for coord in group[1]]
+                if prev_point:
+                    ctrl_pnts = [prev_point] + ctrl_pnts
                 label = get_property(labels, property_index)
-                bspline = BSpline(ctrl_pnts, label)
-                segments.append(bspline)
+                curve = Curve(ctrl_pnts, type, label)
+                segments.append(curve)
                 property_index += 1
                 prev_point = ctrl_pnts[-1]
                 if first_point is None:
@@ -410,7 +425,7 @@ class Geometry:
             transactions.after_sync()
         gmsh.model.mesh.generate()
         gmsh.option.set_number("Mesh.SaveAll", 1)
-        return import_from_gmsh(gmsh.model)
+        return import_from_gmsh()
 
     def write(self, filename: str):
         gmsh.write(filename)
