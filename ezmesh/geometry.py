@@ -232,6 +232,8 @@ class CurveLoop(MeshTransaction):
                 coords = group
                 for coord in coords:
                     # adding points
+                    if (prev_point and (coord == prev_point.coord).all()):
+                        continue
                     point = Point(coord, mesh_size)
                     # adding lines to connect points
                     if prev_point:
@@ -245,11 +247,14 @@ class CurveLoop(MeshTransaction):
                     prev_point = point
             else:
                 type = group[0]
-                ctrl_pnts = [Point(coord, mesh_size) for coord in group[1]]
+                ctrl_coords = group[1]
+                if (prev_point and (ctrl_coords[0] == prev_point.coord).all()):
+                        continue
+                ctrl_points = [Point(ctrl_coord, mesh_size) for ctrl_coord in ctrl_coords]
                 if prev_point:
-                    ctrl_pnts = [prev_point] + ctrl_pnts
+                    ctrl_points = [prev_point] + ctrl_points
                 label = get_property(labels, property_index)
-                curve = Curve(ctrl_pnts, type, label)
+                curve = Curve(ctrl_points, type, label)
                 segments.append(curve)
                 property_index += 1
                 prev_point = curve.end
