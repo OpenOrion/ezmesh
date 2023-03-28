@@ -12,9 +12,13 @@ Number = Union[int, float]
 SegmentType = Union["Line", "Curve"]
 PointCoordType = Union[npt.NDArray[np.float64], Tuple[Number, Number], List[Number]]
 ListOrTuple = Union[List, Tuple]
-
-
 GroupType = Union[npt.NDArray[np.float64], Tuple[str, npt.NDArray[np.float64]]]
+
+
+class MeshContext:
+    point_registry: Dict[Tuple[float, float, float], int]
+    def __init__(self) -> None:
+        self.point_registry = {} 
 
 class DimType(Enum):
     POINT = 0
@@ -29,11 +33,11 @@ class MeshTransaction:
         self.before_sync_initiated: bool = False
         self.after_sync_initiated: bool = False
 
-    def before_sync(self):
+    def before_sync(self, ctx: MeshContext):
         "completes transaction before syncronization and returns tag."
         self.before_sync_initiated = True
 
-    def after_sync(self):
+    def after_sync(self, ctx: MeshContext):
         "completes transaction after syncronization and returns tag."
         self.after_sync_initiated = True
 
@@ -42,22 +46,22 @@ class CurveField(MeshTransaction):
     def __init__(self) -> None:
         super().__init__()
 
-    def before_sync(self, curve_loop: "CurveLoop"):
-        super().before_sync()
+    def before_sync(self, ctx: MeshContext, curve_loop: "CurveLoop"):
+        super().before_sync(ctx)
 
-    def after_sync(self, curve_loop: "CurveLoop"):
-        super().after_sync()
+    def after_sync(self, ctx: MeshContext, curve_loop: "CurveLoop"):
+        super().after_sync(ctx)
 
 
 class SurfaceField(MeshTransaction):
     def __init__(self) -> None:
         super().__init__()
 
-    def before_sync(self, surface: "PlaneSurface"):
-        super().before_sync()
+    def before_sync(self, ctx: MeshContext, surface: "PlaneSurface"):
+        super().before_sync(ctx)
 
-    def after_sync(self, surface: "PlaneSurface"):
-        super().after_sync()
+    def after_sync(self, ctx: MeshContext, surface: "PlaneSurface"):
+        super().after_sync(ctx)
 
 
 @dataclass
@@ -79,10 +83,15 @@ class Point(MeshTransaction):
         self.y = self.coord[1]
         self.z = self.coord[2] if len(self.coord) == 3 else 0
 
-    def before_sync(self):
+    def before_sync(self,ctx: MeshContext):
         if not self.before_sync_initiated:
-            self.tag = gmsh.model.geo.add_point(self.x, self.y, self.z, self.mesh_size)
-        super().before_sync()
+            pnt_key = (self.x, self.y, self.z)
+            if (self.x, self.y) in ctx.point_registry:
+                self.tag = ctx.point_registry[pnt_key]
+            else:
+                self.tag = gmsh.model.geo.add_point(self.x, self.y, self.z, self.mesh_size)
+                ctx.point_registry[pnt_key] = self.tag
+        super().before_sync(ctx)
 
 
 @dataclass
@@ -100,12 +109,12 @@ class Line(MeshTransaction):
         super().__init__()
         self.dim_type = DimType.CURVE
 
-    def before_sync(self):
+    def before_sync(self,ctx: MeshContext):
         if not self.before_sync_initiated:
-            self.start.before_sync()
-            self.end.before_sync()
+            self.start.before_sync(ctx)
+            self.end.before_sync(ctx)
             self.tag = gmsh.model.geo.add_line(self.start.tag, self.end.tag)
-        super().before_sync()
+        super().before_sync(ctx)
 
 
 @dataclass
@@ -125,11 +134,11 @@ class Curve(MeshTransaction):
         self.start = self.ctrl_points[0]
         self.end = self.ctrl_points[-1]
 
-    def before_sync(self):
+    def before_sync(self,ctx: MeshContext):
         if not self.before_sync_initiated:
             ctrl_point_tags = []
             for ctrl_point in self.ctrl_points:
-                ctrl_point.before_sync()
+                ctrl_point.before_sync(ctx)
                 ctrl_point_tags.append(ctrl_point.tag)
             
             if self.type == "BSpline":
@@ -141,7 +150,7 @@ class Curve(MeshTransaction):
             else:
                 raise ValueError(f"Curve type {self.type} not specified")
 
-        super().before_sync()
+        super().before_sync(ctx)
 
     @staticmethod
     def from_coords(
@@ -186,27 +195,27 @@ class CurveLoop(MeshTransaction):
     def get_points(self, group_name: str):
         return [self.segment_groups[group_name][0].start, self.segment_groups[group_name][-1].end]
 
-    def before_sync(self):
+    def before_sync(self,ctx: MeshContext):
         if not self.before_sync_initiated:
             segement_tags = []
             for segment in self.segments:
-                segment.before_sync()
+                segment.before_sync(ctx)
                 segement_tags.append(cast(int, segment.tag))
             self.tag = gmsh.model.geo.add_curve_loop(segement_tags)
             for field in self.fields:
-                field.before_sync(self)
+                field.before_sync(ctx, self)
 
-        super().before_sync()
+        super().before_sync(ctx)
 
-    def after_sync(self):
+    def after_sync(self, ctx: MeshContext):
         if not self.after_sync_initiated:
             for segment in self.segments:
-                segment.after_sync()
+                segment.after_sync(ctx)
 
             for field in self.fields:
-                field.after_sync(self)
+                field.after_sync(ctx, self)
 
-        super().after_sync()
+        super().after_sync(ctx)
 
     @staticmethod
     def from_coords(
@@ -284,21 +293,21 @@ class PlaneSurface(MeshTransaction):
         self.dim_type = DimType.SURFACE
         self.curve_loops = self.outlines + self.holes
 
-    def before_sync(self):
+    def before_sync(self,ctx: MeshContext):
         if not self.before_sync_initiated:
             curve_loop_tags = []
             for curve_loop in self.curve_loops:
-                curve_loop.before_sync()
+                curve_loop.before_sync(ctx)
                 curve_loop_tags.append(curve_loop.tag)
             self.tag = gmsh.model.geo.add_plane_surface(curve_loop_tags)
 
-        super().before_sync()
+        super().before_sync(ctx)
 
-    def after_sync(self):
+    def after_sync(self, ctx: MeshContext):
         if not self.after_sync_initiated:
             segment_groups:  Dict[str, List[SegmentType]] = {}
             for curve_loop in self.curve_loops:
-                curve_loop.after_sync()
+                curve_loop.after_sync(ctx)
                 segment_groups = {**segment_groups, **curve_loop.segment_groups}
             for (name, segments) in segment_groups.items():
                 segment_tags = [segment.tag for segment in segments if segment.tag is not None]
@@ -313,8 +322,8 @@ class PlaneSurface(MeshTransaction):
                 gmsh.model.mesh.set_recombine(2, self.tag)  # type: ignore
 
             for field in self.fields:
-                field.after_sync(self)
-        super().after_sync()
+                field.after_sync(ctx, self)
+        super().after_sync(ctx)
 
 
 @dataclass
@@ -331,14 +340,14 @@ class TransfiniteSurfaceField(SurfaceField):
     def __post_init__(self):
         return super().__init__()
 
-    def after_sync(self, surface: "PlaneSurface"):
+    def after_sync(self, ctx: MeshContext, surface: "PlaneSurface"):
         if not self.after_sync_initiated and self.corners is not None:
             corner_tags: List[int] = []
             for corner in self.corners:
                 corner_tags.append(cast(int, corner.tag))
             gmsh.model.mesh.set_transfinite_surface(surface.tag, self.arrangement, cornerTags=corner_tags)
 
-        super().after_sync(surface)
+        super().after_sync(ctx, surface)
 
 
 @dataclass
@@ -367,7 +376,7 @@ class BoundaryLayerField(CurveField):
     def __post_init__(self):
         super().__init__()
 
-    def after_sync(self, curve_loop: CurveLoop):
+    def after_sync(self, ctx: MeshContext, curve_loop: CurveLoop):
         if not self.after_sync_initiated:
             self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
             segement_tags = [segement.tag for segement in curve_loop.segments]
@@ -388,7 +397,7 @@ class BoundaryLayerField(CurveField):
                 gmsh.model.mesh.field.setNumber(self.tag, "thickness", self.thickness)
 
             gmsh.model.mesh.field.setAsBoundaryLayer(self.tag)
-        super().after_sync(curve_loop)
+        super().after_sync(ctx, curve_loop)
 
 
 @dataclass
@@ -406,7 +415,7 @@ class TransfiniteCurveField(CurveField):
         super().__init__()
         self.dim_type = DimType.CURVE
 
-    def after_sync(self, curve_loop: CurveLoop):
+    def after_sync(self, ctx: MeshContext, curve_loop: CurveLoop):
         if not self.after_sync_initiated:
             for i, segment in enumerate(curve_loop.segments):
                 gmsh.model.mesh.set_transfinite_curve(
@@ -415,11 +424,12 @@ class TransfiniteCurveField(CurveField):
                     meshType=get_property(self.mesh_types, i, segment.label, "Progression"),
                     coef=get_property(self.coefs, i, segment.label, 1.0)
                 )
-        super().after_sync(curve_loop)
+        super().after_sync(ctx, curve_loop)
 
 
 class Geometry:
     def __enter__(self):
+        self.ctx = MeshContext()
         gmsh.initialize()
         return self
 
@@ -429,15 +439,15 @@ class Geometry:
     def generate(self, transactions: Union[MeshTransaction, List[MeshTransaction]]):
         if isinstance(transactions, list):
             for transaction in transactions:
-                transaction.before_sync()
+                transaction.before_sync(self.ctx)
         else:
-            transactions.before_sync()
+            transactions.before_sync(self.ctx)
         gmsh.model.geo.synchronize()
         if isinstance(transactions, list):
             for transaction in transactions:
-                transaction.after_sync()
+                transaction.after_sync(self.ctx)
         else:
-            transactions.after_sync()
+            transactions.after_sync(self.ctx)
         gmsh.model.mesh.generate()
         gmsh.option.set_number("Mesh.SaveAll", 1)
         return import_from_gmsh()
