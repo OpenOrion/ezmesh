@@ -200,13 +200,8 @@ class CurveLoop(MeshTransaction):
 
     def after_sync(self):
         if not self.after_sync_initiated:
-            for (name, segments) in self.segment_groups.items():
-                segment_tags = []
-                for segment in segments:
-                    segment.after_sync()
-                    segment_tags.append(segment.tag)
-                physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, segment_tags)
-                gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, name)
+            for segment in self.segments:
+                segment.after_sync()
 
             for field in self.fields:
                 field.after_sync(self)
@@ -301,8 +296,15 @@ class PlaneSurface(MeshTransaction):
 
     def after_sync(self):
         if not self.after_sync_initiated:
+            segment_groups:  Dict[str, List[SegmentType]] = {}
             for curve_loop in self.curve_loops:
                 curve_loop.after_sync()
+                segment_groups = {**segment_groups, **curve_loop.segment_groups}
+            for (name, segments) in segment_groups.items():
+                segment_tags = [segment.tag for segment in segments if segment.tag is not None]
+                physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, segment_tags)
+                gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, name)
+
             if self.label is not None:
                 physical_group_tag = gmsh.model.add_physical_group(DimType.SURFACE.value, [self.tag])
                 gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, self.label)
