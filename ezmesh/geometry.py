@@ -256,7 +256,12 @@ class CurveLoop(MeshTransaction):
                         continue
                 ctrl_points = [Point(ctrl_coord, mesh_size) for ctrl_coord in ctrl_coords]
                 if prev_point:
-                    ctrl_points = [prev_point] + ctrl_points
+                    if len(segments) > 1 and isinstance(segments[-1], Line):
+                        ctrl_points = [prev_point] + ctrl_points
+                    else:
+                        line = Line(prev_point, ctrl_points[0], label=get_property(labels, property_index))
+                        segments.append(line)
+                        property_index += 1
                 label = get_property(labels, property_index)
                 curve = Curve(ctrl_points, type, label)
                 segments.append(curve)
