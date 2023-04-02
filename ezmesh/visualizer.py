@@ -29,8 +29,9 @@ def visualize_mesh(meshes: Union[Mesh, List[Mesh]], view_width=800, view_height=
     marker_color_labels = {}
     mesh_color_labels = {}
 
-    mesh_line_segements = []
-    mesh_meshes = []
+    marker_line_segments = []
+    buffer_meshes = []
+    target_point_spheres = []
     for i, mesh in enumerate(meshes):
         mesh_color = mesh_colors[i]
         mesh_color_labels[f"Zone {i}"] = mesh_color
@@ -45,6 +46,14 @@ def visualize_mesh(meshes: Union[Mesh, List[Mesh]], view_width=800, view_height=
 
         # Non-marker line segment points
         non_marker_line_points = []
+
+        for target_point_tag in mesh.target_points.values():
+            target_point_sphere = pythreejs.Mesh(
+                geometry=pythreejs.SphereGeometry(radius=0.05),
+                material=pythreejs.MeshLambertMaterial(color='red', side='DoubleSide'),
+            )
+            target_point_sphere.position = mesh.points[target_point_tag].tolist()
+            target_point_spheres.append(target_point_sphere)
 
         for point_tags in mesh.elements:
             for i in range(len(point_tags)):
@@ -69,34 +78,33 @@ def visualize_mesh(meshes: Union[Mesh, List[Mesh]], view_width=800, view_height=
             cast(Any, pythreejs.LineSegmentsGeometry(positions=non_marker_line_points)),
             cast(Any, pythreejs.LineMaterial(linewidth=1, color=to_rgb_str(mesh_color)))
         )
-        mesh_line_segements.append(non_marker_lines)
+        marker_line_segments.append(non_marker_lines)
 
         if len(marker_line_points) > 0:
             marker_lines = pythreejs.LineSegments2(
                 cast(Any, pythreejs.LineSegmentsGeometry(positions=marker_line_points, colors=marker_segment_colors)),
                 cast(Any, pythreejs.LineMaterial(linewidth=2, vertexColors='VertexColors'))
             )
-            mesh_line_segements.append(marker_lines)
+            marker_line_segments.append(marker_lines)
 
-        mesh_mesh_geom = pythreejs.BufferGeometry(attributes=dict(
+        buffer_geom = pythreejs.BufferGeometry(attributes=dict(
             position=pythreejs.BufferAttribute(mesh.points, normalized=False),
             index=pythreejs.BufferAttribute(np.concatenate(mesh.elements), normalized=False),
         ))
 
-        mesh_mesh = pythreejs.Mesh(
-            geometry=mesh_mesh_geom,
+        buffer_mesh = pythreejs.Mesh(
+            geometry=buffer_geom,
             material=pythreejs.MeshLambertMaterial(color='white', side='DoubleSide'),
         )
-        mesh_meshes.append(mesh_mesh)
+        buffer_meshes.append(buffer_mesh)
 
     camera = pythreejs.PerspectiveCamera(position=[0, 0, 1], far=1000, near=0.001, aspect=cast(Any, view_width/view_height))
-    scene = pythreejs.Scene(children=mesh_line_segements+mesh_meshes, background="black")
-
+    scene = pythreejs.Scene(children=[*marker_line_segments, *buffer_meshes, *target_point_spheres, pythreejs.AmbientLight(intensity=0.8)], background="black")
     orbit_controls = pythreejs.OrbitControls(controlling=camera)
 
     pickable_objects = pythreejs.Group()
-    for mesh_mesh in mesh_meshes:
-        pickable_objects.add(mesh_mesh)
+    for buffer_mesh in buffer_meshes:
+        pickable_objects.add(buffer_mesh)
 
     mousemove_picker = pythreejs.Picker(
         controlling=pickable_objects,
