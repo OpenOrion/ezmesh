@@ -1,5 +1,5 @@
 from typing import List, Union
-from .mesh import ElementType, Mesh
+from .mesh import Mesh
 
 
 def export_to_su2(meshes: Union[Mesh, List[Mesh]], file_path: str):

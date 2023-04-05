@@ -32,7 +32,6 @@ def import_from_msh(file_path: str):
     import gmsh
     gmsh.initialize()
     gmsh.open(file_path)
-    model = gmsh.model
     mesh = import_from_gmsh()
     gmsh.finalize()
     return mesh
@@ -51,12 +50,11 @@ def import_from_gmsh() -> Mesh:
     element_types: List[ElementType] = []
 
     node_tags, points_concatted, _ = gmsh.model.mesh.getNodes()
-    node_indices = np.argsort(node_tags-1) # type: ignore
+    node_indices = np.argsort(node_tags-1)  # type: ignore
     points = np.array(points_concatted, dtype=np.float64).reshape((-1, 3))[node_indices]
 
-    
     grouped_concatted_elements = gmsh.model.mesh.getElements()
-    for element_type_value, grouped_element_tags, grouped_node_tags_concatted in zip(*grouped_concatted_elements):        
+    for element_type_value, grouped_element_tags, grouped_node_tags_concatted in zip(*grouped_concatted_elements):
         if element_type_value == ElementType.POINT.value or element_type_value == ElementType.LINE.value:
             continue
         num_nodes = gmsh.model.mesh.getElementProperties(element_type_value)[3]
@@ -76,9 +74,10 @@ def import_from_gmsh() -> Mesh:
             marker_grouped_concatted_elements = gmsh.model.mesh.getElements(group_dim, tag=entity)
             assert len(marker_grouped_concatted_elements[0]) == 1, "There should only be one group"
             marker_element_type, marker_node_tags_concatted = marker_grouped_concatted_elements[0][0], marker_grouped_concatted_elements[2][0]
-            assert marker_element_type == ElementType.LINE.value, "All elements in a group must be a line"
+            if marker_element_type != ElementType.LINE.value:
+                continue
             marker_elements = np.array(marker_node_tags_concatted, dtype=np.uint16).reshape((-1, 2)) - 1
-            
+
             markers[marker_name] += list(marker_elements)
 
     return Mesh(

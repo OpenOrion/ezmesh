@@ -35,7 +35,8 @@ def visualize_mesh(meshes: Union[Mesh, List[Mesh]], view_width=800, view_height=
     for i, mesh in enumerate(meshes):
         mesh_color = mesh_colors[i]
         mesh_color_labels[f"Zone {i}"] = mesh_color
-
+        bounding_box = mesh.get_bounding_box()
+        point_size = max(bounding_box.width, bounding_box.height)*0.03
         # Marker line segment points and colors
         marker_line_points = []
         marker_segment_colors = []
@@ -43,18 +44,16 @@ def visualize_mesh(meshes: Union[Mesh, List[Mesh]], view_width=800, view_height=
         for marker_name, marker_elements in mesh.markers.items():
             for elements in marker_elements:
                 marker_elements_to_name[(elements[0], elements[1])] = marker_name
+                if marker_name in mesh.target_points and elements[1] in mesh.target_points[marker_name]:
+                    target_point_sphere = pythreejs.Mesh(
+                        geometry=pythreejs.SphereGeometry(radius=point_size),
+                        material=pythreejs.MeshLambertMaterial(color='red', side='DoubleSide'),
+                    )
+                    target_point_sphere.position = mesh.points[elements[1]].tolist()
+                    target_point_spheres.append(target_point_sphere)
 
         # Non-marker line segment points
         non_marker_line_points = []
-
-        for target_point_tag in mesh.target_points.values():
-            target_point_sphere = pythreejs.Mesh(
-                geometry=pythreejs.SphereGeometry(radius=0.05),
-                material=pythreejs.MeshLambertMaterial(color='red', side='DoubleSide'),
-            )
-            target_point_sphere.position = mesh.points[target_point_tag].tolist()
-            target_point_spheres.append(target_point_sphere)
-
         for point_tags in mesh.elements:
             for i in range(len(point_tags)):
                 if i + 1 < len(point_tags):
@@ -98,7 +97,7 @@ def visualize_mesh(meshes: Union[Mesh, List[Mesh]], view_width=800, view_height=
         )
         buffer_meshes.append(buffer_mesh)
 
-    camera = pythreejs.PerspectiveCamera(position=[0, 0, 1], far=1000, near=0.001, aspect=cast(Any, view_width/view_height))
+    camera = pythreejs.PerspectiveCamera(position=[0, 0, 1], far=100000, near=0.001, aspect=cast(Any, view_width/view_height))
     scene = pythreejs.Scene(children=[*marker_line_segments, *buffer_meshes, *target_point_spheres, pythreejs.AmbientLight(intensity=0.8)], background="black")
     orbit_controls = pythreejs.OrbitControls(controlling=camera)
 

@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple, Union, cast
 import numpy as np
 import numpy.typing as npt
 import gmsh
+from ezmesh.exporters import export_to_su2
 from ezmesh.utils.geometry import PropertyType, get_property, get_group_name
 from .importers import import_from_gmsh
 
@@ -86,7 +87,7 @@ class Point(MeshTransaction):
     def before_sync(self,ctx: MeshContext):
         if not self.before_sync_initiated:
             pnt_key = (self.x, self.y, self.z)
-            if (self.x, self.y) in ctx.point_registry:
+            if (self.x, self.y, self.z) in ctx.point_registry:
                 self.tag = ctx.point_registry[pnt_key]
             else:
                 self.tag = gmsh.model.geo.add_point(self.x, self.y, self.z, self.mesh_size)
@@ -319,8 +320,8 @@ class PlaneSurface(MeshTransaction):
                 physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, segment_tags)
                 gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, name)
 
+            physical_group_tag = gmsh.model.add_physical_group(DimType.SURFACE.value, [self.tag])
             if self.label is not None:
-                physical_group_tag = gmsh.model.add_physical_group(DimType.SURFACE.value, [self.tag])
                 gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, self.label)
 
             if self.is_quad_mesh:
@@ -453,9 +454,12 @@ class Geometry:
                 transaction.after_sync(self.ctx)
         else:
             transactions.after_sync(self.ctx)
+        gmsh.option.set_number("General.ExpertMode",1)
         gmsh.model.mesh.generate()
-        gmsh.option.set_number("Mesh.SaveAll", 1)
-        return import_from_gmsh()
+        self.mesh = import_from_gmsh()
+        return self.mesh
 
     def write(self, filename: str):
+        if filename.endswith(".su2"):
+            export_to_su2(self.mesh, filename)
         gmsh.write(filename)
