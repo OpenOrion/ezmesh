@@ -462,4 +462,5 @@ class Geometry:
     def write(self, filename: str):
         if filename.endswith(".su2"):
             export_to_su2(self.mesh, filename)
-        gmsh.write(filename)
+        else:
+            gmsh.write(filename)
