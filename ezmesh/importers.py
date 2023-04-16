@@ -67,6 +67,8 @@ def import_from_gmsh() -> Mesh:
     physical_groups = gmsh.model.getPhysicalGroups()
     for group_dim, group_tag in physical_groups:
         marker_name = gmsh.model.getPhysicalName(group_dim, group_tag)
+        if len(marker_name) == 0:
+            continue
         entities = gmsh.model.getEntitiesForPhysicalGroup(group_dim, group_tag)
         for entity in entities:
             marker_grouped_concatted_elements = gmsh.model.mesh.getElements(group_dim, tag=entity)
