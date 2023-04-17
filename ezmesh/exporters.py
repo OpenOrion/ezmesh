@@ -18,7 +18,7 @@ def export_to_su2(meshes: Union[Mesh, List[Mesh]], file_path: str):
             except:
                 print("Warning: Element type not supported: ", element_type.name)
         zone = Zone(
-            izone=izone,
+            izone=izone+1,
             ndime=mesh.dim,
             elements=mesh.elements,
             element_types=element_types,
