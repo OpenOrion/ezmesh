@@ -2,12 +2,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union, cast
 import numpy as np
+from plotly import graph_objects as go
 import numpy.typing as npt
 import gmsh
 from ezmesh.exporters import export_to_su2
-from ezmesh.utils.geometry import PropertyType, get_property, get_group_name
+from ezmesh.utils.geometry import PropertyType, get_bspline, get_property, get_group_name, get_sampling
 from .importers import import_from_gmsh
-
+from shapely.geometry import Polygon
 
 Number = Union[int, float]
 SegmentType = Union["Line", "Curve"]
@@ -18,8 +19,10 @@ GroupType = Union[npt.NDArray[np.float64], Tuple[str, npt.NDArray[np.float64]]]
 
 class MeshContext:
     point_registry: Dict[Tuple[float, float, float], int]
+
     def __init__(self) -> None:
-        self.point_registry = {} 
+        self.point_registry = {}
+
 
 class DimType(Enum):
     POINT = 0
@@ -84,7 +87,7 @@ class Point(MeshTransaction):
         self.y = self.coord[1]
         self.z = self.coord[2] if len(self.coord) == 3 else 0
 
-    def before_sync(self,ctx: MeshContext):
+    def before_sync(self, ctx: MeshContext):
         if not self.before_sync_initiated:
             pnt_key = (self.x, self.y, self.z)
             if (self.x, self.y, self.z) in ctx.point_registry:
@@ -110,7 +113,10 @@ class Line(MeshTransaction):
         super().__init__()
         self.dim_type = DimType.CURVE
 
-    def before_sync(self,ctx: MeshContext):
+    def get_coords(self):
+        return np.array([self.start.coord, self.end.coord])
+
+    def before_sync(self, ctx: MeshContext):
         if not self.before_sync_initiated:
             self.start.before_sync(ctx)
             self.end.before_sync(ctx)
@@ -135,13 +141,19 @@ class Curve(MeshTransaction):
         self.start = self.ctrl_points[0]
         self.end = self.ctrl_points[-1]
 
-    def before_sync(self,ctx: MeshContext):
+    def get_coords(self, num_pnts: int, is_cosine_sampling: bool):
+        ctrl_point_coords = np.array([ctrl_point.coord for ctrl_point in self.ctrl_points])
+        sampling = get_sampling(num_pnts, is_cosine_sampling)
+        bspline = get_bspline(ctrl_point_coords, 3)
+        return bspline(sampling)
+
+    def before_sync(self, ctx: MeshContext):
         if not self.before_sync_initiated:
             ctrl_point_tags = []
             for ctrl_point in self.ctrl_points:
                 ctrl_point.before_sync(ctx)
                 ctrl_point_tags.append(ctrl_point.tag)
-            
+
             if self.type == "BSpline":
                 self.tag = gmsh.model.geo.add_bspline(ctrl_point_tags)
             elif self.type == "Spline":
@@ -172,6 +184,12 @@ class CurveLoop(MeshTransaction):
     segments: List[SegmentType]
     "Lines of curve"
 
+    holes: List["CurveLoop"] = field(default_factory=list)
+    "hole curve loops that make up the surface"
+
+    label: Optional[str] = None
+    "physical group label"
+
     fields: List[CurveField] = field(default_factory=list)
     "fields to be added to the curve loop"
 
@@ -186,23 +204,39 @@ class CurveLoop(MeshTransaction):
                 self.points += segment.ctrl_points
             else:
                 self.points.append(segment.start)
-            
+
             if segment.label:
                 name = get_group_name(segment.label)
                 if name not in self.segment_groups:
                     self.segment_groups[name] = []
                 self.segment_groups[name].append(segment)
 
+    def get_exterior_coords(self, num_pnts: int, is_cosine_sampling: bool = True):
+        coords = []
+        for segment in self.segments:
+            if isinstance(segment, Curve):
+                coords.append(segment.get_coords(num_pnts, is_cosine_sampling))
+            else:
+                coords.append(segment.get_coords())
+        return np.concatenate(coords)
+
+    def get_polygon(self, samples_per_spline: int = 20, is_cosine_sampling: bool = True):
+        return Polygon(
+            shell=self.get_exterior_coords(samples_per_spline, is_cosine_sampling),
+            holes=[hole.get_exterior_coords(samples_per_spline, is_cosine_sampling) for hole in self.holes],
+        )
+
     def get_points(self, group_name: str):
         return [self.segment_groups[group_name][0].start, self.segment_groups[group_name][-1].end]
 
-    def before_sync(self,ctx: MeshContext):
+    def before_sync(self, ctx: MeshContext):
         if not self.before_sync_initiated:
             segement_tags = []
             for segment in self.segments:
                 segment.before_sync(ctx)
                 segement_tags.append(cast(int, segment.tag))
             self.tag = gmsh.model.geo.add_curve_loop(segement_tags)
+
             for field in self.fields:
                 field.before_sync(ctx, self)
 
@@ -222,9 +256,13 @@ class CurveLoop(MeshTransaction):
     def from_coords(
         coordsOrGroups: Union[npt.NDArray[np.float64], List[GroupType]],
         mesh_size: float,
-        labels: Optional[Union[List[str], str]] = None,
+        curve_labels: Optional[Union[List[str], str]] = None,
+        label: Optional[str] = None,
+        holes: List["CurveLoop"] = [],
         fields: List[CurveField] = [],
     ):
+        if curve_labels is None and label is not None:
+            curve_labels = label
         groups = coordsOrGroups if isinstance(coordsOrGroups, list) else [coordsOrGroups]
         segments: List[SegmentType] = []
         property_index: int = 0
@@ -242,8 +280,8 @@ class CurveLoop(MeshTransaction):
                     point = Point(coord, mesh_size)
                     # adding lines to connect points
                     if prev_point:
-                        label = get_property(labels, property_index)
-                        line = Line(prev_point, point, label)
+                        curve_label = get_property(curve_labels, property_index)
+                        line = Line(prev_point, point, curve_label)
                         segments.append(line)
                         property_index += 1
 
@@ -254,17 +292,17 @@ class CurveLoop(MeshTransaction):
                 type = group[0]
                 ctrl_coords = group[1]
                 if (prev_point and (ctrl_coords[0] == prev_point.coord).all()):
-                        continue
+                    continue
                 ctrl_points = [Point(ctrl_coord, mesh_size) for ctrl_coord in ctrl_coords]
                 if prev_point:
                     if len(segments) > 1 and isinstance(segments[-1], Line):
                         ctrl_points = [prev_point] + ctrl_points
                     else:
-                        line = Line(prev_point, ctrl_points[0], label=get_property(labels, property_index))
+                        line = Line(prev_point, ctrl_points[0], label=get_property(curve_labels, property_index))
                         segments.append(line)
                         property_index += 1
-                label = get_property(labels, property_index)
-                curve = Curve(ctrl_points, type, label)
+                curve_label = get_property(curve_labels, property_index)
+                curve = Curve(ctrl_points, type, curve_label)
                 segments.append(curve)
                 property_index += 1
                 prev_point = curve.end
@@ -272,18 +310,15 @@ class CurveLoop(MeshTransaction):
                     first_point = curve.start
 
         assert prev_point and first_point, "No points found in curve loop"
-        segments.append(Line(prev_point, first_point, label=get_property(labels, property_index)))
+        segments.append(Line(prev_point, first_point, label=get_property(curve_labels, property_index)))
 
-        return CurveLoop(segments, fields)
+        return CurveLoop(segments, holes, label, fields)
 
 
 @dataclass
 class PlaneSurface(MeshTransaction):
     outlines: List[CurveLoop]
     "outline curve loop that make up the surface"
-
-    holes: List[CurveLoop] = field(default_factory=list)
-    "hole curve loops that make up the surface"
 
     label: Optional[str] = None
     "label for physical group surface"
@@ -297,9 +332,38 @@ class PlaneSurface(MeshTransaction):
     def __post_init__(self):
         super().__init__()
         self.dim_type = DimType.SURFACE
+        self.holes = [hole for outline in self.outlines for hole in outline.holes]
         self.curve_loops = self.outlines + self.holes
+    def get_polygons(self, samples_per_spline: int = 20, is_cosine_sampling: bool = True):
+        return [outline.get_polygon(samples_per_spline, is_cosine_sampling) for outline in self.outlines]
 
-    def before_sync(self,ctx: MeshContext):
+    def visualize(self, title: str = "Surface"):
+        fig = go.Figure(
+            layout=go.Layout(title=go.layout.Title(text=title))
+        )
+        for i, polygon in enumerate(self.get_polygons()):
+            x, y = polygon.exterior.xy
+            fig.add_trace(go.Scatter(
+                x=x.tolist(),
+                y=y.tolist(),
+                name=self.outlines[i].label,
+                legendgroup="Curve Loops",
+                fill="toself",
+            ))
+
+            for j,hole in enumerate(polygon.interiors):
+                x, y = hole.xy
+                fig.add_trace(go.Scatter(
+                    x=x.tolist(),
+                    y=y.tolist(),
+                    name=self.outlines[i].holes[j].label,
+                    legendgroup="Holes",
+                    fill="toself",
+                ))
+        fig.layout.yaxis.scaleanchor = "x"  # type: ignore
+        fig.show()
+
+    def before_sync(self, ctx: MeshContext):
         if not self.before_sync_initiated:
             curve_loop_tags = []
             for curve_loop in self.curve_loops:
@@ -454,7 +518,7 @@ class Geometry:
                 transaction.after_sync(self.ctx)
         else:
             transactions.after_sync(self.ctx)
-        gmsh.option.set_number("General.ExpertMode",1)
+        gmsh.option.set_number("General.ExpertMode", 1)
         gmsh.model.mesh.generate()
         self.mesh = import_from_gmsh()
         return self.mesh

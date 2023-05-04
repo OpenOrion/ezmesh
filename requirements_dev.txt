@@ -7,3 +7,5 @@ numpy
 gmsh
 pythreejs
 git+https://github.com/Turbodesigner/su2fmt.git#egg=su2fmt
+shapely
+scipy
