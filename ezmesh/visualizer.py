@@ -15,28 +15,27 @@ def visualize_curve_loops(
         is_cosine_sampling: bool = True
     ):
     from .geometry import CurveLoop
-    curve_loops = cast(List[CurveLoop], curve_loops)
+    curve_loops: List[CurveLoop] = cast(List[CurveLoop], curve_loops)
 
     fig = go.Figure(
         layout=go.Layout(title=go.layout.Title(text=title))
     )
     
     for i, curve_loop in enumerate(curve_loops):
-        polygon = curve_loop.get_polygon(samples_per_spline, is_cosine_sampling)
-        x, y = polygon.exterior.xy
+        loop_exterior_coords = curve_loop.get_exterior_coords(samples_per_spline, is_cosine_sampling)
         fig.add_trace(go.Scatter(
-            x=x.tolist(),
-            y=y.tolist(),
+            x=loop_exterior_coords[:,0],
+            y=loop_exterior_coords[:,1],
             name=curve_loops[i].label,
             legendgroup="Curve Loops",
             fill="toself",
         ))
 
-        for j,hole in enumerate(polygon.interiors):
-            x, y = hole.xy
+        for j,hole in enumerate(curve_loop.holes):
+            hole_exterior_coords = hole.get_exterior_coords(samples_per_spline, is_cosine_sampling)
             fig.add_trace(go.Scatter(
-                x=x.tolist(),
-                y=y.tolist(),
+                x=hole_exterior_coords[:,0],
+                y=hole_exterior_coords[:,1],
                 name=curve_loops[i].holes[j].label,
                 legendgroup="Holes",
                 fill="toself",
