@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
    name='ezmesh',
-   version='3.1',
+   version='3.5',
    description='the open source parametric CFD mesh generator',
    author='Afshawn Lotfi',
    author_email='',

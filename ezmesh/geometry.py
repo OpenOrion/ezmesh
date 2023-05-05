@@ -2,11 +2,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union, cast
 import numpy as np
-from plotly import graph_objects as go
 import numpy.typing as npt
 import gmsh
 from ezmesh.exporters import export_to_su2
 from ezmesh.utils.geometry import PropertyType, get_bspline, get_property, get_group_name, get_sampling
+from ezmesh.visualizer import visualize_curve_loops
 from .importers import import_from_gmsh
 from shapely.geometry import Polygon
 
@@ -44,6 +44,11 @@ class MeshTransaction:
     def after_sync(self, ctx: MeshContext):
         "completes transaction after syncronization and returns tag."
         self.after_sync_initiated = True
+
+    def reset(self):
+        self.tag = None
+        self.before_sync_initiated = False
+        self.after_sync_initiated = False
 
 
 class CurveField(MeshTransaction):
@@ -123,6 +128,11 @@ class Line(MeshTransaction):
             self.tag = gmsh.model.geo.add_line(self.start.tag, self.end.tag)
         super().before_sync(ctx)
 
+    def reset(self):
+        super().reset()
+        self.start.reset()
+        self.end.reset()
+
 
 @dataclass
 class Curve(MeshTransaction):
@@ -164,6 +174,11 @@ class Curve(MeshTransaction):
                 raise ValueError(f"Curve type {self.type} not specified")
 
         super().before_sync(ctx)
+
+    def reset(self):
+        super().reset()
+        for ctrl_point in self.ctrl_points:
+            ctrl_point.reset()
 
     @staticmethod
     def from_coords(
@@ -211,6 +226,9 @@ class CurveLoop(MeshTransaction):
                     self.segment_groups[name] = []
                 self.segment_groups[name].append(segment)
 
+    def visualize(self):
+        visualize_curve_loops([self], self.label or "Curve Loop")
+
     def get_exterior_coords(self, num_pnts: int, is_cosine_sampling: bool = True):
         coords = []
         for segment in self.segments:
@@ -251,6 +269,14 @@ class CurveLoop(MeshTransaction):
                 field.after_sync(ctx, self)
 
         super().after_sync(ctx)
+
+    def reset(self):
+        super().reset()
+        for segment in self.segments:
+            segment.reset()
+
+        for field in self.fields:
+            field.reset()
 
     @staticmethod
     def from_coords(
@@ -334,34 +360,12 @@ class PlaneSurface(MeshTransaction):
         self.dim_type = DimType.SURFACE
         self.holes = [hole for outline in self.outlines for hole in outline.holes]
         self.curve_loops = self.outlines + self.holes
+
     def get_polygons(self, samples_per_spline: int = 20, is_cosine_sampling: bool = True):
         return [outline.get_polygon(samples_per_spline, is_cosine_sampling) for outline in self.outlines]
 
     def visualize(self, title: str = "Surface"):
-        fig = go.Figure(
-            layout=go.Layout(title=go.layout.Title(text=title))
-        )
-        for i, polygon in enumerate(self.get_polygons()):
-            x, y = polygon.exterior.xy
-            fig.add_trace(go.Scatter(
-                x=x.tolist(),
-                y=y.tolist(),
-                name=self.outlines[i].label,
-                legendgroup="Curve Loops",
-                fill="toself",
-            ))
-
-            for j,hole in enumerate(polygon.interiors):
-                x, y = hole.xy
-                fig.add_trace(go.Scatter(
-                    x=x.tolist(),
-                    y=y.tolist(),
-                    name=self.outlines[i].holes[j].label,
-                    legendgroup="Holes",
-                    fill="toself",
-                ))
-        fig.layout.yaxis.scaleanchor = "x"  # type: ignore
-        fig.show()
+        visualize_curve_loops(self.outlines, title)
 
     def before_sync(self, ctx: MeshContext):
         if not self.before_sync_initiated:
@@ -394,6 +398,14 @@ class PlaneSurface(MeshTransaction):
             for field in self.fields:
                 field.after_sync(ctx, self)
         super().after_sync(ctx)
+
+    def reset(self):
+        super().reset()
+        for curve_loop in self.curve_loops:
+            curve_loop.reset()
+
+        for field in self.fields:
+            field.reset()
 
 
 @dataclass
@@ -521,6 +533,13 @@ class Geometry:
         gmsh.option.set_number("General.ExpertMode", 1)
         gmsh.model.mesh.generate()
         self.mesh = import_from_gmsh()
+
+        if isinstance(transactions, list):
+            for transaction in transactions:
+                transaction.reset()
+        else:
+            transactions.reset()
+
         return self.mesh
 
     def write(self, filename: str):
