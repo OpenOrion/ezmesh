@@ -8,7 +8,6 @@ from ezmesh.exporters import export_to_su2
 from ezmesh.utils.geometry import PropertyType, get_bspline, get_property, get_group_name, get_sampling
 from ezmesh.visualizer import visualize_curve_loops
 from .importers import import_from_gmsh
-from shapely.geometry import Polygon
 
 Number = Union[int, float]
 SegmentType = Union["Line", "Curve"]
@@ -238,12 +237,6 @@ class CurveLoop(MeshTransaction):
                 coords.append(segment.get_coords())
         return np.concatenate(coords)
 
-    def get_polygon(self, samples_per_spline: int = 20, is_cosine_sampling: bool = True):
-        return Polygon(
-            shell=self.get_exterior_coords(samples_per_spline, is_cosine_sampling),
-            holes=[hole.get_exterior_coords(samples_per_spline, is_cosine_sampling) for hole in self.holes],
-        )
-
     def get_points(self, group_name: str):
         return [self.segment_groups[group_name][0].start, self.segment_groups[group_name][-1].end]
 
@@ -360,9 +353,6 @@ class PlaneSurface(MeshTransaction):
         self.dim_type = DimType.SURFACE
         self.holes = [hole for outline in self.outlines for hole in outline.holes]
         self.curve_loops = self.outlines + self.holes
-
-    def get_polygons(self, samples_per_spline: int = 20, is_cosine_sampling: bool = True):
-        return [outline.get_polygon(samples_per_spline, is_cosine_sampling) for outline in self.outlines]
 
     def visualize(self, title: str = "Surface"):
         visualize_curve_loops(self.outlines, title)
