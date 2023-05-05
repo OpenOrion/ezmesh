@@ -1,4 +1,5 @@
 from typing import Any, List, Union, cast
+from plotly import graph_objects as go
 from .mesh import Mesh
 from .utils.visualization import generate_color_legend_html, generate_rgb_values, to_rgb_str
 import pythreejs
@@ -6,6 +7,42 @@ from IPython.display import display
 from IPython.core.display import HTML
 import ipywidgets as widgets
 import numpy as np
+
+def visualize_curve_loops(
+        curve_loops: List[Any], 
+        title: str = "Surface", 
+        samples_per_spline: int = 20, 
+        is_cosine_sampling: bool = True
+    ):
+    from .geometry import CurveLoop
+    curve_loops = cast(List[CurveLoop], curve_loops)
+
+    fig = go.Figure(
+        layout=go.Layout(title=go.layout.Title(text=title))
+    )
+    
+    for i, curve_loop in enumerate(curve_loops):
+        polygon = curve_loop.get_polygon(samples_per_spline, is_cosine_sampling)
+        x, y = polygon.exterior.xy
+        fig.add_trace(go.Scatter(
+            x=x.tolist(),
+            y=y.tolist(),
+            name=curve_loops[i].label,
+            legendgroup="Curve Loops",
+            fill="toself",
+        ))
+
+        for j,hole in enumerate(polygon.interiors):
+            x, y = hole.xy
+            fig.add_trace(go.Scatter(
+                x=x.tolist(),
+                y=y.tolist(),
+                name=curve_loops[i].holes[j].label,
+                legendgroup="Holes",
+                fill="toself",
+            ))
+    fig.layout.yaxis.scaleanchor = "x"  # type: ignore
+    fig.show()
 
 
 def visualize_mesh(meshes: Union[Mesh, List[Mesh]], view_width=800, view_height=600):
