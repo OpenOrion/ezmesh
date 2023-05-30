@@ -44,7 +44,7 @@ class Mesh:
             marker_length += np.linalg.norm(self.points[elements[0]] - self.points[elements[1]])
         return marker_length
 
-    def add_target_point(self, name: str, marker_name: str, proportion: float):
+    def get_marker_point(self, marker_name: str, proportion: float, as_index = False):
         if marker_name not in self.markers:
             raise ValueError(f"Marker '{marker_name}' not found in mesh")
         if proportion < 0 or proportion > 1:
@@ -55,8 +55,14 @@ class Mesh:
             assert len(point_indices) == 2
             current_marker_length += np.linalg.norm(self.points[point_indices[0]] - self.points[point_indices[1]])
             if current_marker_length / total_marker_length >= proportion:
-                if marker_name not in self.target_points:
-                    self.target_points[marker_name] = {}
-                self.target_points[marker_name][point_indices[1]] = name
-                return
+                if as_index:
+                    return point_indices[1]
+                else:
+                    return self.points[point_indices[1]]
         raise ValueError(f"Proportion {proportion} is too large for marker '{marker_name}'")
+
+    def add_target_point(self, name: str, marker_name: str, proportion: float):
+        point_index = self.get_marker_point(marker_name, proportion, as_index=True)
+        if marker_name not in self.target_points:
+            self.target_points[marker_name] = {}
+        self.target_points[marker_name][point_index] = name
