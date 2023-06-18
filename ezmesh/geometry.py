@@ -282,6 +282,7 @@ class CurveLoop(MeshTransaction):
     ):
         if curve_labels is None and label is not None:
             curve_labels = label
+
         groups = coordsOrGroups if isinstance(coordsOrGroups, list) else [coordsOrGroups]
         segments: List[SegmentType] = []
         property_index: int = 0
@@ -289,47 +290,45 @@ class CurveLoop(MeshTransaction):
         prev_point = None
         first_point = None
         for group in groups:
-
-            if isinstance(group, np.ndarray):
-                coords = group
+            if isinstance(group, np.ndarray) or group[0] == "LineSegment":
+                
+                coords = group if isinstance(group, np.ndarray) else group[1]
+                is_line_segment = isinstance(group, tuple)
+                
                 for coord in coords:
-                    # adding points
-                    if (prev_point and (coord == prev_point.coord).all()):
-                        continue
                     point = Point(coord, mesh_size)
                     # adding lines to connect points
                     if prev_point:
                         curve_label = get_property(curve_labels, property_index)
                         line = Line(prev_point, point, curve_label)
                         segments.append(line)
-                        property_index += 1
+                        if not is_line_segment:
+                            property_index += 1
 
                     if first_point is None:
                         first_point = point
                     prev_point = point
+                if is_line_segment:
+                    property_index += 1
             else:
-                type = group[0]
-                ctrl_coords = group[1]
-                if (prev_point and (ctrl_coords[0] == prev_point.coord).all()):
-                    continue
+                type, ctrl_coords = group
                 ctrl_points = [Point(ctrl_coord, mesh_size) for ctrl_coord in ctrl_coords]
                 if prev_point:
-                    if len(segments) > 1 and isinstance(segments[-1], Line):
-                        ctrl_points = [prev_point] + ctrl_points
-                    else:
-                        line = Line(prev_point, ctrl_points[0], label=get_property(curve_labels, property_index))
-                        segments.append(line)
-                        property_index += 1
-                curve_label = get_property(curve_labels, property_index)
-                curve = Curve(ctrl_points, type, curve_label)
+                    ctrl_points = [prev_point, *ctrl_points]
+
+                
+                curve = Curve(ctrl_points, type, label=get_property(curve_labels, property_index))
                 segments.append(curve)
                 property_index += 1
+                
                 prev_point = curve.end
                 if first_point is None:
                     first_point = curve.start
 
         assert prev_point and first_point, "No points found in curve loop"
-        segments.append(Line(prev_point, first_point, label=get_property(curve_labels, property_index)))
+        
+        last_line = Line(prev_point, first_point, label=get_property(curve_labels, property_index))
+        segments.append(last_line)
 
         return CurveLoop(segments, holes, label, fields)
 

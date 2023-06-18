@@ -2,7 +2,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List
-from ezmesh.utils.geometry import Graph
 import numpy.typing as npt
 import numpy as np
 
@@ -33,17 +32,6 @@ class Mesh:
     markers: Dict[str, List[npt.NDArray[np.uint16]]]
     target_points: Dict[str, Dict[np.uint16, str]] = field(default_factory=dict)
 
-    def __post_init__(self):
-        self.marker_paths = {}
-        for marker_name, marker_elements in self.markers.items():
-            graph = Graph(marker_elements)
-            path = graph.separate_paths()[0]
-            sorted_markers = []
-            for i in range(len(path)):
-                if i+1 < len(path):
-                    sorted_markers.append(np.array([path[i], path[i+1]]))
-            self.marker_paths[marker_name] = path
-            self.markers[marker_name] =  sorted_markers
 
     def get_bounding_box(self):
         max_point = self.points.min(axis=0)
