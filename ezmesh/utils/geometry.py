@@ -1,4 +1,4 @@
-from typing import Optional, Iterable, TypeVar, Union, List, Dict, cast
+from typing import Optional, TypeVar, Union, List, Dict, cast
 from scipy.interpolate import BSpline
 import numpy as np
 import numpy.typing as npt
@@ -48,45 +48,3 @@ def get_bspline(ctrl_pnts: npt.NDArray, degree: int):
         constant_values=(0, 1)
     )
     return BSpline(knots, ctrl_pnts, degree, extrapolate=False)
-
-class Graph:
-    def __init__(self, initial_edges: Optional[Iterable[Iterable]] = None):
-        self.adjacency_list = {}
-        if initial_edges is not None:
-            for edge in initial_edges:
-                self.add_edge(*edge)
-
-    def add_edge(self, node1, node2):
-        if node1 not in self.adjacency_list:
-            self.adjacency_list[node1] = []
-        if node2 not in self.adjacency_list:
-            self.adjacency_list[node2] = []
-        self.adjacency_list[node1].append(node2)
-        self.adjacency_list[node2].append(node1)
-
-    def dfs(self, start_node):
-        visited = set()
-        stack = [start_node]
-        path = []
-        while stack:
-            node = stack.pop()
-            if node not in visited:
-                visited.add(node)
-                path.append(node)
-                neighbors = self.adjacency_list.get(node, [])
-                stack.extend(neighbors)
-        return path
-
-    def separate_paths(self):
-        visited = set()
-        paths = []
-        for node in self.adjacency_list:
-            if node not in visited:
-                path = self.dfs(node)
-                paths.append(path)
-                visited.update(path)
-        non_connecting_nodes = set(self.adjacency_list.keys()).difference(visited)
-        for node in non_connecting_nodes:
-            paths.append([node])
-        return paths
-
