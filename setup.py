@@ -16,6 +16,8 @@ setup(
     "pythreejs",
     "su2fmt @ git+https://github.com/Turbodesigner/su2fmt.git",
     "shapely",
-    "scipy"
+    "scipy",
+    "plotly",
+    "ipython_genutils",
    ]
 )

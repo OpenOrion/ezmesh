@@ -47,7 +47,7 @@ with Geometry() as geo:
     wedge_curve_loop = CurveLoop.from_coords(
         wedge_coords, 
         mesh_size = 0.05,
-        labels=["upper", "outlet", "lower/1", "lower/2", "inlet"],
+        curve_labels=["upper", "outlet", "lower/1", "lower/2", "inlet"],
         fields=[
            TransfiniteCurveField(node_counts=[150,200,100,50,200])
         ]
