@@ -8,20 +8,35 @@ from ezmesh.geometry.entity import MeshContext, GeoEntity
 from ezmesh.geometry.point import Point
 from ezmesh.utils.types import NumpyFloat
 
-class Edge(GeoEntity, Protocol):
-    label: Optional[str] = None
-    "physical group label"
 
+class Edge(GeoEntity):
     start: Point
     "starting point of edge"
 
     end: Point
     "ending point of edge"
 
-    def get_coords(self, num_pnts: int, is_cosine_sampling: bool = False) -> npt.NDArray[NumpyFloat]:
+    label: Optional[str] = None
+    "physical group label"
+
+    def __init__(self, tag: int, ctx: MeshContext):
+        self.ctx = ctx
+        self.tag = tag
+        
+
+    def before_sync(self, ctx: MeshContext):
         ...
 
-PointTuple = tuple[npt.NDArray[NumpyFloat], float]
+    def after_sync(self, ctx: MeshContext):
+        ...
+
+    def get_coords(self, num_pnts: int = 20) -> npt.NDArray[NumpyFloat]:
+        assert self.tag is not None, "Edge must be synced before getting coordinates"
+        bounds = gmsh.model.getParametrizationBounds(1, self.tag)
+        t = [bounds[0][0] + i * (bounds[1][0] - bounds[0][0]) / num_pnts for i in range(num_pnts)]
+        coords_concatted = gmsh.model.getValue(1, self.tag, t)
+        return np.array(coords_concatted, dtype=NumpyFloat).reshape((-1, 3))
+
 
 @dataclass
 class Line(Edge):
@@ -37,20 +52,14 @@ class Line(Edge):
     def before_sync(self, ctx: MeshContext):        
         start_tag = self.start.before_sync(ctx)
         end_tag = self.end.before_sync(ctx)
-        
-        if (start_tag, end_tag) in ctx.line_registry:
-            self.tag = ctx.line_registry[(start_tag, end_tag)]
-        else:
-            self.tag = gmsh.model.geo.add_line(self.start.tag, self.end.tag)
-            ctx.line_registry[(start_tag, end_tag)] = self.tag
+        self.tag = self.tag or gmsh.model.geo.add_line(start_tag, end_tag)
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
         return super().after_sync(ctx)
 
-    def get_coords(self):
-        return np.array([self.start.coord, self.end.coord])
-
+    def get_coords(self, num_pnts: int = 2):
+        return super().get_coords(num_pnts)
 
 @dataclass
 class Curve(Edge):
@@ -62,9 +71,6 @@ class Curve(Edge):
 
     label: Optional[str] = None
     "physical group label"
-
-    tag: Optional[int] = None
-    "tag of curve"
 
     @property
     def start(self):
@@ -90,11 +96,4 @@ class Curve(Edge):
     
     def after_sync(self, ctx: MeshContext):
         return super().after_sync(ctx)
-
-    def get_coords(self, num_pnts: int, is_cosine_sampling: bool):
-        ...
-        # ctrl_point_coords = np.array([ctrl_point.coord for ctrl_point in self.ctrl_pnts])
-        # sampling = get_sampling(num_pnts, is_cosine_sampling)
-        # bspline = get_bspline(ctrl_point_coords, 3)
-        # return bspline(sampling)
 

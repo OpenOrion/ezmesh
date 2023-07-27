@@ -13,7 +13,7 @@ class Point(GeoEntity):
     coord: CoordType
     "coordinate of point"
 
-    mesh_size: float
+    mesh_size: float = 0.0
     "mesh size for point"
 
     label: Optional[int] = None
@@ -33,11 +33,11 @@ class Point(GeoEntity):
         pnt_key = (self.x, self.y, self.z)
 
         if self.tag is None:
-            if (self.x, self.y, self.z) in ctx.point_registry:
-                self.tag = ctx.point_registry[pnt_key]
+            if (self.x, self.y, self.z) in ctx.point_lookup:
+                self.tag = ctx.point_lookup[pnt_key]
             else:
                 self.tag = gmsh.model.geo.add_point(self.x, self.y, self.z, self.mesh_size)
-                ctx.point_registry[pnt_key] = self.tag
+                ctx.point_lookup[pnt_key] = self.tag
 
         return self.tag
 

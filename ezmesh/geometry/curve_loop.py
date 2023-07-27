@@ -59,9 +59,9 @@ class CurveLoop(GeoEntity):
         for field in self.fields:
             field.after_sync(ctx, self)
 
-    def get_exterior_coords(self, num_pnts: int, is_cosine_sampling: bool = True):
+    def get_exterior_coords(self, num_pnts: int):
         coords = [
-            edge.get_coords(num_pnts, is_cosine_sampling)
+            edge.get_coords(num_pnts)
             for edge in self.edges
         ]
         return np.concatenate(coords)
@@ -108,12 +108,8 @@ class CurveLoop(GeoEntity):
         return CurveLoop(edges, label, fields)
     
     @staticmethod
-    def from_tag(tag: int, curve_tags: Sequence[int]):
-        edges = []
-        for curve_tag in curve_tags:
-            edge = None
-            edges.append(edge)
-        
+    def from_tag(tag: int, edge_tags: Sequence[int]):
+        edges = [Edge(edge_tag) for edge_tag in edge_tags]
         curve_loop = CurveLoop(edges, tag=tag)
         return curve_loop
     
