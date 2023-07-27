@@ -1,24 +1,27 @@
 import gmsh
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
-import numpy as np
-from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
-from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.fields.field import Field
-from ezmesh.utils.geometry import get_group_name
-
-
-from typing import Optional, Sequence, Union
-
+from typing import Optional, Sequence, Union, cast
 import numpy as np
 import numpy.typing as npt
+from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
 from ezmesh.geometry.edge import Curve, Edge, Line
 from ezmesh.geometry.point import Point
-from ezmesh.utils.geometry import get_property
-
 from ezmesh.utils.types import NumpyFloat
+from ezmesh.utils.geometry import get_group_name
+from ezmesh.geometry.field import Field
 
 GroupType = Union[npt.NDArray[NumpyFloat], tuple[str, npt.NDArray[NumpyFloat]]]
+
+
+def get_lines(coords: npt.NDArray[NumpyFloat], mesh_size: float, labels: Union[str, list[str], None] = None):
+    return [
+        Line(
+            start=Point(coords[i-1], mesh_size), 
+            end=Point(coords[i], mesh_size), 
+            label=labels[i-1] if isinstance(labels, list) else labels
+        )
+        for i in range(1, len(coords))
+    ]
 
 @dataclass
 class CurveLoop(GeoEntity):
@@ -41,11 +44,10 @@ class CurveLoop(GeoEntity):
 
         for edge in self.edges:
             if edge.label:
-                name = get_group_name(edge.label)
-                if name not in self.edge_groups:
-                    self.edge_groups[name] = []
-                self.edge_groups[name].append(edge)
-
+                edge_group = get_group_name(edge.label)
+                if edge_group not in self.edge_groups:
+                    self.edge_groups[edge_group] = []
+                self.edge_groups[edge_group].append(edge)
 
     def before_sync(self, ctx: MeshContext):
         edge_tags = [edge.before_sync(ctx) for edge in self.edges]
@@ -66,6 +68,46 @@ class CurveLoop(GeoEntity):
 
 
     @staticmethod
+    def from_coords(
+        coordsOrGroups: Union[npt.NDArray[NumpyFloat], Sequence[GroupType]],
+        mesh_size: float,
+        group_labels: Optional[Union[str, list[str]]] = None,
+        label: Optional[str] = None,
+        fields: Sequence[Field] = [],
+    ):
+        groups = coordsOrGroups if isinstance(coordsOrGroups, Sequence) else [coordsOrGroups]
+        group_labels = group_labels if group_labels else label
+        
+        edges: list[Edge] = []
+        property_index = 0
+        for i, group in enumerate(groups):
+            if isinstance(group, np.ndarray):
+                group_label = group_labels[property_index:] if isinstance(group_labels, list) else group_labels
+                edges += get_lines(group, mesh_size, group_label)
+                property_index += len(group)-1
+            elif isinstance(group, tuple):
+                type, coords = group
+                group_label = group_labels[property_index] if group_labels else None
+
+                if type == "LineSegment":
+                    edges += get_lines(coords, mesh_size, group_label)
+                else:
+                    ctrl_pnts = [Point(ctrl_coord, mesh_size) for ctrl_coord in coords]
+                    if len(edges) > 1 and isinstance(edges[-1], Line):
+                        ctrl_pnts = [edges[-1].end, *ctrl_pnts]
+                    curve = Curve(ctrl_pnts, type, group_label)
+                    edges.append(curve)
+                property_index += 1
+
+            end_pnt = edges[0].start if i == len(groups) - 1 else edges[-1].end
+            connector_label = group_labels[property_index] if isinstance(group_labels, list) else group_labels
+            connector_line = Line(edges[-1].end, end_pnt, connector_label)
+            edges.append(connector_line)
+            property_index += 1
+
+        return CurveLoop(edges, label, fields)
+    
+    @staticmethod
     def from_tag(tag: int, curve_tags: Sequence[int]):
         edges = []
         for curve_tag in curve_tags:
@@ -75,68 +117,3 @@ class CurveLoop(GeoEntity):
         curve_loop = CurveLoop(edges, tag=tag)
         return curve_loop
     
-
-
-    @staticmethod
-    def from_coords(
-        coordsOrGroups: Union[npt.NDArray[NumpyFloat], list[GroupType]],
-        mesh_size: float,
-        curve_labels: Optional[Union[list[str], str]] = None,
-        label: Optional[str] = None,
-        fields: Sequence[Field] = [],
-    ):
-        if curve_labels is None and label is not None:
-            curve_labels = label
-        
-        groups = coordsOrGroups if isinstance(coordsOrGroups, list) else [coordsOrGroups]
-        edges: list[Edge] = []
-        property_index: int = 0
-
-        prev_point = None
-        first_point = None
-        for group in groups:
-            if isinstance(group, np.ndarray) or group[0] == "LineSegment":
-                
-                coords = group if isinstance(group, np.ndarray) else group[1]
-                is_line_segment = isinstance(group, tuple)
-                
-                for coord in coords:
-                    point = Point(coord, mesh_size)
-                    # adding lines to connect points
-                    if prev_point:
-                        curve_label = get_property(curve_labels, property_index)
-                        line = Line(prev_point, point, curve_label)
-                        edges.append(line)
-                        if not is_line_segment:
-                            property_index += 1
-
-                    if first_point is None:
-                        first_point = point
-                    prev_point = point
-                if is_line_segment:
-                    property_index += 1
-            else:
-                type, ctrl_coords = group
-                ctrl_points = [Point(ctrl_coord, mesh_size) for ctrl_coord in ctrl_coords]
-                if prev_point:
-                    if len(edges) > 1 and isinstance(edges[-1], Line):
-                        ctrl_points = [prev_point, *ctrl_points]
-                    else:
-                        line = Line(prev_point, ctrl_points[0], label=get_property(curve_labels, property_index))
-                        edges.append(line)
-                        property_index += 1
-
-                curve = Curve(ctrl_points, type, label=get_property(curve_labels, property_index))
-                edges.append(curve)
-                property_index += 1
-                
-                prev_point = curve.ctrl_pnts[-1]
-                if first_point is None:
-                    first_point = curve.ctrl_pnts[0]
-
-        assert prev_point and first_point, "No points found in curve loop"
-
-        last_line = Line(prev_point, first_point, label=get_property(curve_labels, property_index))
-        edges.append(last_line)
-
-        return CurveLoop(edges, label, fields)

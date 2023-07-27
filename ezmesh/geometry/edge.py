@@ -12,6 +12,12 @@ class Edge(GeoEntity, Protocol):
     label: Optional[str] = None
     "physical group label"
 
+    start: Point
+    "starting point of edge"
+
+    end: Point
+    "ending point of edge"
+
     def get_coords(self, num_pnts: int, is_cosine_sampling: bool = False) -> npt.NDArray[NumpyFloat]:
         ...
 
@@ -27,10 +33,6 @@ class Line(Edge):
 
     label: Optional[str] = None
     "physical group label"
-
-    def __post_init__(self):
-        self.start = Point(*self.start) if isinstance(self.start, tuple) else self.start
-        self.end = Point(*self.end) if isinstance(self.end, tuple) else self.end
 
     def before_sync(self, ctx: MeshContext):        
         start_tag = self.start.before_sync(ctx)
@@ -64,6 +66,14 @@ class Curve(Edge):
     tag: Optional[int] = None
     "tag of curve"
 
+    @property
+    def start(self):
+        return self.ctrl_pnts[0]
+    
+    @property
+    def end(self):
+        return self.ctrl_pnts[-1]
+
     def before_sync(self, ctx: MeshContext):
         ctrl_pnt_tags = [ctrl_point.before_sync(ctx) for ctrl_point in self.ctrl_pnts]
 
@@ -87,3 +97,4 @@ class Curve(Edge):
         # sampling = get_sampling(num_pnts, is_cosine_sampling)
         # bspline = get_bspline(ctrl_point_coords, 3)
         # return bspline(sampling)
+

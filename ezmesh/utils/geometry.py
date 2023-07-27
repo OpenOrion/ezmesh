@@ -1,7 +1,9 @@
-from typing import Optional, TypeVar, Union, cast
+from typing import Optional, Sequence, TypeVar, Union, cast
 from scipy.interpolate import BSpline
 import numpy as np
 import numpy.typing as npt
+
+from ezmesh.utils.types import NumpyFloat
 
 T = TypeVar('T')
 PropertyType = Union[list[T], T, dict[str, T]]
@@ -13,7 +15,7 @@ def get_group_name(selector: str) -> str:
     return selector
 
 
-def get_property(property: Optional[PropertyType[T]], index: int, label: Optional[str] = None, default: T = None) -> T:
+def get_property(property: Optional[Union[list[T], T, dict[str, T]]], index: int, label: Optional[str] = None, default: T = None) -> T:
     if property is None:
         return cast(T, default)
     elif isinstance(property, list):
@@ -36,15 +38,3 @@ def get_sampling(num_samples: int, is_cosine_sampling: bool):
         return 0.5*(1.0-np.cos(beta))
     else:
         return np.linspace(0.0, 1.0, num_samples, endpoint=True)
-
-
-def get_bspline(ctrl_pnts: npt.NDArray, degree: int):
-    "get a bspline with clamped knots"
-    num_ctrl_pnts = ctrl_pnts.shape[0]
-    knots = np.pad(
-        array=np.linspace(0, 1, (num_ctrl_pnts + 1) - degree),
-        pad_width=(degree, degree),
-        mode='constant',
-        constant_values=(0, 1)
-    )
-    return BSpline(knots, ctrl_pnts, degree, extrapolate=False)

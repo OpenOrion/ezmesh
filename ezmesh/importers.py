@@ -63,7 +63,7 @@ def import_from_gmsh() -> Mesh:
         element_types += [ElementType(element_type_value)] * len(elements)
 
     # get physical groups
-    markers: dict[str, list[npt.NDArray[np.uint16]]] = {}
+    markers = {}
     physical_groups = gmsh.model.getPhysicalGroups()
     for group_dim, group_tag in physical_groups:
         marker_name = gmsh.model.getPhysicalName(group_dim, group_tag)

@@ -4,7 +4,7 @@ from typing import Optional, Sequence, cast
 from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
 from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.fields.field import Field
+from ezmesh.geometry.field import Field
 
 @dataclass
 class PlaneSurface(GeoEntity):
@@ -49,7 +49,6 @@ class PlaneSurface(GeoEntity):
 
         for field in self.fields:
             field.after_sync(ctx, self)
-
 
     @staticmethod
     def from_tag(tag: int):
