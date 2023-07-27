@@ -77,7 +77,7 @@ visualize_mesh(mesh)
 ![Inviscid Wedge](./assets/wedge_visualization.png)
 
 
-# Devlopement Setup
+# Developement Setup
 ```
 git clone https://github.com/Turbodesigner/ezmesh.git
 cd ezmesh

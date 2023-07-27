@@ -1,8 +1,8 @@
-from typing import Dict, List
+from typing import Sequence
 import numpy as np
 import colorsys
 
-def generate_color_legend_html(title: str, color_labels: Dict[str, List[int]]):
+def generate_color_legend_html(title: str, color_labels: dict[str, list[int]]):
     title = f"<h2>{title}</h2>"
     legend = '<table>'
     for label, color in color_labels.items():
@@ -32,6 +32,6 @@ def generate_rgb_values(n_colors, is_grayscale=False):
 
     return colors
 
-def to_rgb_str(color: List[int]):
+def to_rgb_str(color: Sequence[int]):
     return f"rgb({int(color[0]*255)},{int(color[1]*255)},{int(color[2]*255)})"
 

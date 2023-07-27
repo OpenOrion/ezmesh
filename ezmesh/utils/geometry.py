@@ -1,10 +1,10 @@
-from typing import Optional, TypeVar, Union, List, Dict, cast
+from typing import Optional, TypeVar, Union, cast
 from scipy.interpolate import BSpline
 import numpy as np
 import numpy.typing as npt
 
 T = TypeVar('T')
-PropertyType = Union[List[T], T, Dict[str, T]]
+PropertyType = Union[list[T], T, dict[str, T]]
 
 
 def get_group_name(selector: str) -> str:

@@ -1,5 +1,6 @@
-from typing import Any, List, Union, cast
+from typing import Any, List, Sequence, Union, cast
 from plotly import graph_objects as go
+
 from .mesh import Mesh
 from .utils.visualization import generate_color_legend_html, generate_rgb_values, to_rgb_str
 import pythreejs
@@ -9,13 +10,13 @@ import ipywidgets as widgets
 import numpy as np
 
 def visualize_curve_loops(
-        curve_loops: List[Any], 
-        title: str = "Surface", 
-        samples_per_spline: int = 20, 
-        is_cosine_sampling: bool = True
-    ):
-    from .geometry import CurveLoop
-    curve_loops: List[CurveLoop] = cast(List[CurveLoop], curve_loops)
+    curve_loops: Sequence[Any], 
+    title: str = "Surface", 
+    samples_per_spline: int = 20, 
+    is_cosine_sampling: bool = True
+):
+    from ezmesh.geometry.curve_loop import CurveLoop
+    curve_loops: Sequence[CurveLoop] = cast(Sequence[CurveLoop], curve_loops)
 
     fig = go.Figure(
         layout=go.Layout(title=go.layout.Title(text=title))
@@ -23,28 +24,21 @@ def visualize_curve_loops(
     
     for i, curve_loop in enumerate(curve_loops):
         loop_exterior_coords = curve_loop.get_exterior_coords(samples_per_spline, is_cosine_sampling)
-        fig.add_trace(go.Scatter(
+        fig.add_scatter3d(
             x=loop_exterior_coords[:,0],
             y=loop_exterior_coords[:,1],
-            name=curve_loops[i].label,
-            legendgroup="Curve Loops",
-            fill="toself",
-        ))
+            z=loop_exterior_coords[:,2],
+            # name=curve_loops[i].label,
+            # legendgroup="Curve Loops",
+            # fill="toself",
+        )
 
-        for j,hole in enumerate(curve_loop.holes):
-            hole_exterior_coords = hole.get_exterior_coords(samples_per_spline, is_cosine_sampling)
-            fig.add_trace(go.Scatter(
-                x=hole_exterior_coords[:,0],
-                y=hole_exterior_coords[:,1],
-                name=curve_loops[i].holes[j].label,
-                legendgroup="Holes",
-                fill="toself",
-            ))
+
     fig.layout.yaxis.scaleanchor = "x"  # type: ignore
     fig.show()
 
 
-def visualize_mesh(meshes: Union[Mesh, List[Mesh]], view_width=800, view_height=600):
+def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=600):
     coord_html = widgets.HTML("Coords: ()")
 
     def on_surf_mousemove(change):

@@ -1,9 +1,11 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List
+from typing import Sequence
 import numpy.typing as npt
 import numpy as np
+
+from ezmesh.utils.types import NumpyFloat
 
 
 class ElementType(Enum):
@@ -26,11 +28,11 @@ class BoundingBox:
 @dataclass
 class Mesh:
     dim: int
-    elements: List[npt.NDArray[np.uint16]]
-    element_types: List[ElementType]
-    points: npt.NDArray[np.float64]
-    markers: Dict[str, List[npt.NDArray[np.uint16]]]
-    target_points: Dict[str, Dict[np.uint16, str]] = field(default_factory=dict)
+    elements: Sequence[npt.NDArray[np.uint16]]
+    element_types: Sequence[ElementType]
+    points: npt.NDArray[NumpyFloat]
+    markers: dict[str, Sequence[npt.NDArray[np.uint16]]]
+    target_points: dict[str, dict[np.uint16, str]] = field(default_factory=dict)
 
 
     def get_bounding_box(self):

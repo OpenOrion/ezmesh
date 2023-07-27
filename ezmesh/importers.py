@@ -1,6 +1,6 @@
 
+from ezmesh.utils.types import NumpyFloat
 from .mesh import ElementType, Mesh
-from typing import Any, Dict, List
 import numpy.typing as npt
 import numpy as np
 import gmsh
@@ -46,12 +46,12 @@ def import_from_file(file_path: str):
 
 def import_from_gmsh() -> Mesh:
     dim = gmsh.model.getDimension()
-    elements: List[npt.NDArray[np.uint16]] = []
-    element_types: List[ElementType] = []
+    elements: list[npt.NDArray[np.uint16]] = []
+    element_types: list[ElementType] = []
 
     node_tags, points_concatted, _ = gmsh.model.mesh.getNodes()
     node_indices = np.argsort(node_tags-1)  # type: ignore
-    points = np.array(points_concatted, dtype=np.float64).reshape((-1, 3))[node_indices]
+    points = np.array(points_concatted, dtype=NumpyFloat).reshape((-1, 3))[node_indices]
 
     grouped_concatted_elements = gmsh.model.mesh.getElements()
     for element_type_value, grouped_element_tags, grouped_node_tags_concatted in zip(*grouped_concatted_elements):
@@ -63,7 +63,7 @@ def import_from_gmsh() -> Mesh:
         element_types += [ElementType(element_type_value)] * len(elements)
 
     # get physical groups
-    markers: Dict[str, List[npt.NDArray[np.uint16]]] = {}
+    markers: dict[str, list[npt.NDArray[np.uint16]]] = {}
     physical_groups = gmsh.model.getPhysicalGroups()
     for group_dim, group_tag in physical_groups:
         marker_name = gmsh.model.getPhysicalName(group_dim, group_tag)

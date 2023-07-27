@@ -1,16 +1,16 @@
-from typing import List, Union
+from typing import Sequence, Union
 from .mesh import Mesh
 
 
-def export_to_su2(meshes: Union[Mesh, List[Mesh]], file_path: str):
+def export_to_su2(meshes: Union[Mesh, Sequence[Mesh]], file_path: str):
     """Export a mesh from SU2 format"""
     from su2fmt import Mesh as Su2Mesh, export_mesh
     from su2fmt.mesh import ElementType as Su2ElementType, Zone
-    if not isinstance(meshes, list):
+    if not isinstance(meshes, Sequence):
         meshes = [meshes]
     zones = []
     for izone, mesh in enumerate(meshes):
-        element_types: List[Su2ElementType] = []
+        element_types: Sequence[Su2ElementType] = []
         for element_type in mesh.element_types:
             try:
                 su2_element_type = Su2ElementType[element_type.name]
