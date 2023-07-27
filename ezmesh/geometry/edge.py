@@ -1,6 +1,6 @@
 
 from dataclasses import dataclass
-from typing import Optional, Protocol, Sequence
+from typing import Optional, Sequence
 import gmsh
 import numpy as np
 import numpy.typing as npt
@@ -17,12 +17,7 @@ class Edge(GeoEntity):
     "ending point of edge"
 
     label: Optional[str] = None
-    "physical group label"
-
-    def __init__(self, tag: int, ctx: MeshContext):
-        self.ctx = ctx
-        self.tag = tag
-        
+    "physical group label"        
 
     def before_sync(self, ctx: MeshContext):
         ...
@@ -37,6 +32,11 @@ class Edge(GeoEntity):
         coords_concatted = gmsh.model.getValue(1, self.tag, t)
         return np.array(coords_concatted, dtype=NumpyFloat).reshape((-1, 3))
 
+    @staticmethod
+    def from_tag(tag: int):
+        edge = Edge()
+        edge.tag = tag
+        return edge
 
 @dataclass
 class Line(Edge):

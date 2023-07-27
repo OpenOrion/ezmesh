@@ -87,7 +87,7 @@ class CurveLoop(GeoEntity):
                 property_index += len(group)-1
             elif isinstance(group, tuple):
                 type, coords = group
-                group_label = group_labels[property_index] if group_labels else None
+                group_label = group_labels[property_index] if isinstance(group_labels, list) else group_labels
 
                 if type == "LineSegment":
                     edges += get_lines(coords, mesh_size, group_label)
@@ -100,16 +100,17 @@ class CurveLoop(GeoEntity):
                 property_index += 1
 
             end_pnt = edges[0].start if i == len(groups) - 1 else edges[-1].end
-            connector_label = group_labels[property_index] if isinstance(group_labels, list) else group_labels
-            connector_line = Line(edges[-1].end, end_pnt, connector_label)
-            edges.append(connector_line)
-            property_index += 1
+            if not np.all(edges[-1].end.coord == end_pnt.coord):
+                connector_label = group_labels[property_index] if isinstance(group_labels, list) else group_labels
+                connector_line = Line(edges[-1].end, end_pnt, connector_label)
+                edges.append(connector_line)
+                property_index += 1
 
         return CurveLoop(edges, label, fields)
     
     @staticmethod
     def from_tag(tag: int, edge_tags: Sequence[int]):
-        edges = [Edge(edge_tag) for edge_tag in edge_tags]
+        edges = [Edge.from_tag(edge_tag) for edge_tag in edge_tags]
         curve_loop = CurveLoop(edges, tag=tag)
         return curve_loop
     
