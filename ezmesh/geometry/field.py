@@ -1,7 +1,7 @@
 import gmsh
 from dataclasses import dataclass
-from typing import Optional, Sequence, Union, cast
-from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
+from typing import Optional, Union, cast
+from ezmesh.geometry.entity import MeshContext, GeoTransaction
 from ezmesh.geometry.point import Point
 from ezmesh.utils.geometry import PropertyType, get_property
 from ezmesh.utils.types import Number
@@ -9,7 +9,7 @@ from typing import Protocol
 
 
 class Field(Protocol):
-    def after_sync(self, ctx: MeshContext, entity: GeoEntity):
+    def after_sync(self, ctx: MeshContext, entity: GeoTransaction):
         "completes transaction after syncronization and returns tag."
         ...
 
@@ -36,30 +36,34 @@ class BoundaryLayerField(Field):
     is_quad_mesh: bool = False
     "generate recombined elements in the boundary layer"
 
+    def __post_init__(self):
+        self.tags = set()
 
-    def after_sync(self, ctx: MeshContext, curve_loop: GeoEntity):
+    def after_sync(self, ctx: MeshContext, curve_loop: GeoTransaction):
         from ezmesh.geometry.curve_loop import CurveLoop
-        assert isinstance(curve_loop, CurveLoop)
+        assert isinstance(curve_loop, CurveLoop) and curve_loop.tag is not None
+        
+        if curve_loop.tag not in self.tags:
+            tag = gmsh.model.mesh.field.add('BoundaryLayer')
+            edge_tags = [edge.tag for edge in curve_loop.edges]
+            gmsh.model.mesh.field.setNumbers(tag, 'CurvesList', edge_tags)
+            if self.aniso_max:
+                gmsh.model.mesh.field.setNumber(tag, "AnisoMax", self.aniso_max)
+            if self.intersect_metrics:
+                gmsh.model.mesh.field.setNumber(tag, "IntersectMetrics", self.intersect_metrics)
+            if self.is_quad_mesh:
+                gmsh.model.mesh.field.setNumber(tag, "Quads", int(self.is_quad_mesh))
+            if self.hfar:
+                gmsh.model.mesh.field.setNumber(tag, "hfar", self.hfar)
+            if self.hwall_n:
+                gmsh.model.mesh.field.setNumber(tag, "hwall_n", self.hwall_n)
+            if self.ratio:
+                gmsh.model.mesh.field.setNumber(tag, "ratio", self.ratio)
+            if self.thickness:
+                gmsh.model.mesh.field.setNumber(tag, "thickness", self.thickness)
 
-        tag = gmsh.model.mesh.field.add('BoundaryLayer')
-        edge_tags = [edge.tag for edge in curve_loop.edges]
-        gmsh.model.mesh.field.setNumbers(tag, 'CurvesList', edge_tags)
-        if self.aniso_max:
-            gmsh.model.mesh.field.setNumber(tag, "AnisoMax", self.aniso_max)
-        if self.intersect_metrics:
-            gmsh.model.mesh.field.setNumber(tag, "IntersectMetrics", self.intersect_metrics)
-        if self.is_quad_mesh:
-            gmsh.model.mesh.field.setNumber(tag, "Quads", int(self.is_quad_mesh))
-        if self.hfar:
-            gmsh.model.mesh.field.setNumber(tag, "hfar", self.hfar)
-        if self.hwall_n:
-            gmsh.model.mesh.field.setNumber(tag, "hwall_n", self.hwall_n)
-        if self.ratio:
-            gmsh.model.mesh.field.setNumber(tag, "ratio", self.ratio)
-        if self.thickness:
-            gmsh.model.mesh.field.setNumber(tag, "thickness", self.thickness)
-
-        gmsh.model.mesh.field.setAsBoundaryLayer(tag)
+            gmsh.model.mesh.field.setAsBoundaryLayer(tag)
+            self.tags.add(curve_loop.tag)
 
 @dataclass
 class TransfiniteCurveField(Field):
@@ -73,20 +77,21 @@ class TransfiniteCurveField(Field):
     "coefficients for each curve"
 
     def __post_init__(self):
-        super().__init__()
-        self.dim_type = DimType.CURVE
+        self.tags = set()
 
-    def after_sync(self, ctx: MeshContext, curve_loop: GeoEntity):
+    def after_sync(self, ctx: MeshContext, curve_loop: GeoTransaction):
         from ezmesh.geometry.curve_loop import CurveLoop
-        assert isinstance(curve_loop, CurveLoop)
-        for i, edge in enumerate(curve_loop.edges):
-            gmsh.model.mesh.set_transfinite_curve(
-                edge.tag,
-                numNodes=cast(Number, get_property(self.node_counts, i, edge.label))+1,
-                meshType=get_property(self.mesh_types, i, edge.label, "Progression"),
-                coef=get_property(self.coefs, i, edge.label, 1.0)
-            )
-        super().after_sync(ctx, curve_loop)
+        assert isinstance(curve_loop, CurveLoop) and curve_loop.tag is not None
+
+        if curve_loop.tag not in self.tags:
+            for i, edge in enumerate(curve_loop.edges):
+                gmsh.model.mesh.set_transfinite_curve(
+                    edge.tag,
+                    numNodes=cast(Number, get_property(self.node_counts, i, edge.label))+1,
+                    meshType=get_property(self.mesh_types, i, edge.label, "Progression"),
+                    coef=get_property(self.coefs, i, edge.label, 1.0)
+                )
+            self.tags.add(curve_loop.tag)
 
 
 @dataclass
@@ -100,11 +105,15 @@ class TransfiniteSurfaceField(Field):
     arrangement: str = "Left"
     "arrangement of transfinite surface"
 
-    def after_sync(self, ctx: MeshContext, surface: GeoEntity):
+
+    def __post_init__(self):
+        self.tags = set()
+
+    def after_sync(self, ctx: MeshContext, surface: GeoTransaction):
         from ezmesh.geometry.plane_surface import PlaneSurface
-        assert isinstance(surface, PlaneSurface)
+        assert isinstance(surface, PlaneSurface) and surface.tag is not None
         
-        if self.corners is not None:
+        if self.corners is not None and surface.tag not in self.tags:
             if isinstance(self.corners, tuple):
                 first_corner_group, second_corner_group = self.corners
                 primary_curve_loop = surface.curve_loops[0]
@@ -117,6 +126,7 @@ class TransfiniteSurfaceField(Field):
             else:
                 corner_tags = [cast(int, corner.tag) for corner in self.corners]
             gmsh.model.mesh.set_transfinite_surface(surface.tag, self.arrangement, corner_tags)
+            self.tags.add(surface.tag)
 
         super().after_sync(ctx, surface)
 

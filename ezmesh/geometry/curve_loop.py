@@ -1,9 +1,9 @@
 import gmsh
 from dataclasses import dataclass, field
-from typing import Optional, Sequence, Union, cast
+from typing import Optional, Sequence, Union
 import numpy as np
 import numpy.typing as npt
-from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
+from ezmesh.geometry.entity import DimType, MeshContext, GeoTransaction
 from ezmesh.geometry.edge import Curve, Edge, Line
 from ezmesh.geometry.point import Point
 from ezmesh.utils.types import NumpyFloat
@@ -11,7 +11,6 @@ from ezmesh.utils.geometry import get_group_name
 from ezmesh.geometry.field import Field
 
 GroupType = Union[npt.NDArray[NumpyFloat], tuple[str, npt.NDArray[NumpyFloat]]]
-
 
 def get_lines(coords: npt.NDArray[NumpyFloat], mesh_size: float, labels: Union[str, list[str], None] = None):
     return [
@@ -24,7 +23,7 @@ def get_lines(coords: npt.NDArray[NumpyFloat], mesh_size: float, labels: Union[s
     ]
 
 @dataclass
-class CurveLoop(GeoEntity):
+class CurveLoop(GeoTransaction):
     edges: Sequence[Edge]
     "Lines of curve"
 
@@ -99,7 +98,10 @@ class CurveLoop(GeoEntity):
                     edges.append(curve)
                 property_index += 1
 
+            # Connect to first edge start point if last group otherwise use previous edge end point
             end_pnt = edges[0].start if i == len(groups) - 1 else edges[-1].end
+            
+            # Ignore repeat start/end point
             if not np.all(edges[-1].end.coord == end_pnt.coord):
                 connector_label = group_labels[property_index] if isinstance(group_labels, list) else group_labels
                 connector_line = Line(edges[-1].end, end_pnt, connector_label)

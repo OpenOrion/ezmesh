@@ -1,7 +1,7 @@
 import gmsh
 from typing import Sequence, Union
 from ezmesh.exporters import export_to_su2
-from ezmesh.geometry.entity import MeshContext, GeoEntity
+from ezmesh.geometry.entity import MeshContext, GeoTransaction
 from ezmesh.importers import import_from_gmsh
 
 class Geometry:
@@ -13,7 +13,7 @@ class Geometry:
     def __exit__(self, exc_type, exc_val, exc_tb):
         gmsh.finalize()
 
-    def generate(self, transactions: Union[GeoEntity, Sequence[GeoEntity]]):
+    def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]]):
         if isinstance(transactions, Sequence):
             for transaction in transactions:
                 transaction.before_sync(self.ctx)

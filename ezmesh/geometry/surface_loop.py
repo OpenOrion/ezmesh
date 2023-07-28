@@ -1,12 +1,12 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional, Sequence
-from ezmesh.geometry.entity import MeshContext, GeoEntity
+from ezmesh.geometry.entity import MeshContext, GeoTransaction
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.utils.types import NumpyFloat
 
 @dataclass
-class SurfaceLoop(GeoEntity):
+class SurfaceLoop(GeoTransaction):
     surfaces: Sequence[PlaneSurface]
     "Lines of curve"
 
@@ -25,5 +25,4 @@ class SurfaceLoop(GeoEntity):
     @staticmethod
     def from_tag(tag: int, surface_tags: Sequence[int]):
         surfaces = [PlaneSurface.from_tag(surface_tag) for surface_tag in surface_tags]
-        surface_loop = SurfaceLoop(surfaces, tag=tag)
-        return surface_loop
+        return SurfaceLoop(surfaces, tag=tag)

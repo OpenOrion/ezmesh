@@ -4,7 +4,7 @@ from typing import Optional, Sequence
 import gmsh
 import numpy as np
 import numpy.typing as npt
-from ezmesh.geometry.entity import MeshContext, GeoEntity
+from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
 from ezmesh.geometry.point import Point
 from ezmesh.utils.types import NumpyFloat
 
@@ -16,8 +16,8 @@ class Edge(GeoEntity):
     end: Point
     "ending point of edge"
 
-    label: Optional[str] = None
-    "physical group label"        
+    def __init__(self):
+        self.type = DimType.CURVE
 
     def before_sync(self, ctx: MeshContext):
         ...

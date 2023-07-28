@@ -1,9 +1,5 @@
-from typing import Optional, Sequence, TypeVar, Union, cast
-from scipy.interpolate import BSpline
+from typing import Optional, TypeVar, Union, cast
 import numpy as np
-import numpy.typing as npt
-
-from ezmesh.utils.types import NumpyFloat
 
 T = TypeVar('T')
 PropertyType = Union[list[T], T, dict[str, T]]

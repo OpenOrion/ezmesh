@@ -23,6 +23,9 @@ class PlaneSurface(GeoEntity):
     tag: Optional[int] = None
     "tag of the surface"
 
+    def __post_init__(self):
+        self.type = DimType.SURFACE
+
     def before_sync(self, ctx: MeshContext):
         curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]
         self.tag = self.tag or gmsh.model.geo.add_plane_surface(curve_loop_tags)
@@ -57,5 +60,4 @@ class PlaneSurface(GeoEntity):
             CurveLoop.from_tag(curve_loop_tag, cast(Sequence[int], curve_tags[i]))
             for i, curve_loop_tag in enumerate(curve_loop_tags)
         ]
-        surface = PlaneSurface(curve_loops, tag=tag)
-        return surface
+        return PlaneSurface(curve_loops, tag=tag)
