@@ -27,47 +27,50 @@ class EntityRegistry():
                     for curve_loop in surface.curve_loops:
                         for edge in curve_loop.edges:
                             self.register[edge.id] = edge
- 
-        gmsh.finalize()
 
-
+        self.level = 0
 
     def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None):
         self.workplane = self.workplane.faces(selector, tag)
+        self.level += 1
         return self
     
     def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None):
         self.workplane = self.workplane.edges(selector, tag)
+        self.level += 1
         return self
 
-    def tag(self, name: str):
-        self.workplane = self.workplane.tag(name)
-        return self
+    def vals(self):
+        cqobjects = self.workplane.vals()
+        entities = []
+        for cqobject in cqobjects:
+            if isinstance(cqobject, cq.occ_impl.shapes.Compound):
+                type = DimType.VOLUME
+            elif isinstance(cqobject, cq.occ_impl.shapes.Face):
+                type = DimType.SURFACE
+            elif isinstance(cqobject, cq.occ_impl.shapes.Edge):
+                type = DimType.CURVE
+            else:
+                raise ValueError(f"cannot get id for {cqobject}")
 
-    def get_id(self) -> GeoEntityId:
-        cqobject = self.workplane.val()
-
-        if isinstance(cqobject, cq.occ_impl.shapes.Compound):
-            type = DimType.SURFACE
-        elif isinstance(cqobject, cq.occ_impl.shapes.Face):
-            type = DimType.SURFACE
-        elif isinstance(cqobject, cq.occ_impl.shapes.Edge):
-            type = DimType.CURVE
-        else:
-            raise ValueError(f"cannot get id for {cqobject}")
-
-        center_of_mass =  tuple(round(x, 5) for x in cqobject.centerOfMass(cqobject).toTuple())
-        return (type.value, center_of_mass)
+            center_of_mass =  tuple(round(x, 5) for x in cqobject.centerOfMass(cqobject).toTuple())
+            id = (type.value, center_of_mass)
+            entities.append(self.register[id])
+        return entities
+    
+    def reset(self):
+        self.workplane = self.workplane.end(self.level)
+        self.level = 0
 
     def addPhysicalGroup(self, label: str):
-        id = self.get_id()
-        self.register[id].label = label
-        self.workplane = self.workplane.end()
+        for entity in self.vals():
+            entity.label = label
+        self.reset()
         return self
     
     def addFields(self, fields: Sequence[Field]):
-        id = self.get_id()
-        entity = self.register[id]
-        entity.fields = [*entity.fields, *fields]
-        self.workplane = self.workplane.end()
+        for entity in self.vals():
+            entity.fields = [*entity.fields, *fields]
+        self.reset()
         return self
+
