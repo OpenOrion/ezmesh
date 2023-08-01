@@ -22,7 +22,13 @@ class SurfaceLoop(GeoTransaction):
         for surface in self.surfaces:
             surface.after_sync(ctx)
 
+    def get_edges(self):
+        edges = []
+        for surface in self.surfaces:
+            edges += surface.get_edges()
+        return edges
+
     @staticmethod
-    def from_tag(tag: int, surface_tags: Sequence[int]):
-        surfaces = [PlaneSurface.from_tag(surface_tag) for surface_tag in surface_tags]
+    def from_tag(tag: int, surface_tags: Sequence[int], ctx: MeshContext):
+        surfaces = [PlaneSurface.from_tag(surface_tag, ctx) for surface_tag in surface_tags]
         return SurfaceLoop(surfaces, tag=tag)

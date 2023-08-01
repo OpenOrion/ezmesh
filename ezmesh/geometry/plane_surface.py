@@ -32,15 +32,8 @@ class PlaneSurface(GeoEntity):
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
-        edge_groups:  dict[str, list[Edge]] = {}
         for curve_loop in self.curve_loops:
             curve_loop.after_sync(ctx)
-            edge_groups = {**edge_groups, **curve_loop.edge_groups}
-        
-        for (name, edges) in edge_groups.items():
-            segment_tags = [segment.tag for segment in edges if segment.tag is not None]
-            physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, segment_tags)
-            gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, name)
 
         # NOTICE: add physical group for surface regardless of label because SU2 output bug
         physical_group_tag = gmsh.model.add_physical_group(DimType.SURFACE.value, [self.tag])
@@ -53,11 +46,17 @@ class PlaneSurface(GeoEntity):
         for field in self.fields:
             field.after_sync(ctx, self)
 
+    def get_edges(self):
+        edges: Sequence[Edge] = []
+        for curve_loop in self.curve_loops:
+            edges += curve_loop.edges
+        return edges
+
     @staticmethod
-    def from_tag(tag: int):
+    def from_tag(tag: int, ctx: MeshContext):
         curve_loop_tags, curve_tags = gmsh.model.occ.get_curve_loops(tag)
         curve_loops = [ 
-            CurveLoop.from_tag(curve_loop_tag, cast(Sequence[int], curve_tags[i]))
+            CurveLoop.from_tag(curve_loop_tag, cast(Sequence[int], curve_tags[i]), ctx)
             for i, curve_loop_tag in enumerate(curve_loop_tags)
         ]
         return PlaneSurface(curve_loops, tag=tag)

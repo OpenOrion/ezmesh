@@ -40,21 +40,43 @@ class CurveLoop(GeoTransaction):
         super().__init__()
         self.dim_type = DimType.CURVE
         self.edge_groups: dict[str, list[Edge]] = {}
+        
 
+    def before_sync(self, ctx: MeshContext):
+        edge_tags = [edge.before_sync(ctx) for edge in self.edges]
+        self.tag = self.tag or gmsh.model.geo.add_curve_loop(edge_tags)
+        
+        self.edge_groups = {}
         for edge in self.edges:
             if edge.label:
                 edge_group = get_group_name(edge.label)
                 if edge_group not in self.edge_groups:
                     self.edge_groups[edge_group] = []
                 self.edge_groups[edge_group].append(edge)
+        # if self.label is None and len(self.edge_groups) == 1 and len(list(self.edge_groups.values())[0]) == len(self.edges):
+        #     self.label = list(self.edge_groups.keys())[0]
 
-    def before_sync(self, ctx: MeshContext):
-        edge_tags = [edge.before_sync(ctx) for edge in self.edges]
-        self.tag = self.tag or gmsh.model.geo.add_curve_loop(edge_tags)
+
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
-        # NOTICE: No longer iterating Edges for after_sync 
+        # for edge in self.edges:
+            # add physical groups here and account for duplicates
+            # if edge.tag and edge.label:
+            #     physical_group_id = (DimType.CURVE, edge.label)
+            #     if physical_group_id in ctx.physical_groups:
+            #         physical_group_tag = ctx.physical_groups[physical_group_id] 
+            #         physical_group_tag = gmsh.model.remove_physical_groups(DimType.CURVE.value, [edge.tag])
+
+            #     else:
+            #         physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, [edge.tag])
+            #         ctx.physical_groups[physical_group_id] = physical_group_tag
+
+            #     gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, edge.label)
+
+
+            # edge.after_sync(ctx)        
+
         for field in self.fields:
             field.after_sync(ctx, self)
 
@@ -110,9 +132,12 @@ class CurveLoop(GeoTransaction):
 
         return CurveLoop(edges, label, fields)
     
+    def get_edges(self):
+        return self.edges
+
     @staticmethod
-    def from_tag(tag: int, edge_tags: Sequence[int]):
-        edges = [Edge.from_tag(edge_tag) for edge_tag in edge_tags]
+    def from_tag(tag: int, edge_tags: Sequence[int], ctx: MeshContext):
+        edges = [Edge.from_tag(edge_tag, ctx) for edge_tag in edge_tags]
         curve_loop = CurveLoop(edges, tag=tag)
         return curve_loop
     

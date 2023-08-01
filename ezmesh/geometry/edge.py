@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
 from ezmesh.geometry.point import Point
+from ezmesh.utils.geometry import get_sampling
 from ezmesh.utils.types import NumpyFloat
 
 
@@ -17,6 +18,7 @@ class Edge(GeoEntity):
     "ending point of edge"
 
     def __init__(self):
+        self.label = None
         self.type = DimType.CURVE
 
     def before_sync(self, ctx: MeshContext):
@@ -24,18 +26,24 @@ class Edge(GeoEntity):
 
     def after_sync(self, ctx: MeshContext):
         ...
-
-    def get_coords(self, num_pnts: int = 20) -> npt.NDArray[NumpyFloat]:
+        
+    def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False) -> npt.NDArray[NumpyFloat]:
         assert self.tag is not None, "Edge must be synced before getting coordinates"
         bounds = gmsh.model.getParametrizationBounds(1, self.tag)
-        t = [bounds[0][0] + i * (bounds[1][0] - bounds[0][0]) / num_pnts for i in range(num_pnts)]
-        coords_concatted = gmsh.model.getValue(1, self.tag, t)
+        sampling = get_sampling(bounds[0][0], bounds[1][0], num_pnts, is_cosine_sampling)
+        coords_concatted = gmsh.model.getValue(1, self.tag, sampling)
         return np.array(coords_concatted, dtype=NumpyFloat).reshape((-1, 3))
-
+    
     @staticmethod
-    def from_tag(tag: int):
+    def from_tag(tag: int, ctx: MeshContext):
+        if tag in ctx.edges:
+            return ctx.edges[tag]
         edge = Edge()
         edge.tag = tag
+        start_coord, end_coord = edge.get_coords(2)
+        edge.start = Point(start_coord)
+        edge.end = Point(end_coord)
+        ctx.add_edge(edge)
         return edge
 
 @dataclass
@@ -54,9 +62,6 @@ class Line(Edge):
         end_tag = self.end.before_sync(ctx)
         self.tag = self.tag or gmsh.model.geo.add_line(start_tag, end_tag)
         return self.tag
-
-    def after_sync(self, ctx: MeshContext):
-        return super().after_sync(ctx)
 
     def get_coords(self, num_pnts: int = 2):
         return super().get_coords(num_pnts)
@@ -94,6 +99,4 @@ class Curve(Edge):
                 raise ValueError(f"Curve type {self.type} not specified")
         return self.tag
     
-    def after_sync(self, ctx: MeshContext):
-        return super().after_sync(ctx)
 

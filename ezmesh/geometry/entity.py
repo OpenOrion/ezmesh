@@ -2,30 +2,8 @@ from dataclasses import field
 import gmsh
 import numpy as np
 from enum import Enum
-from typing import Optional, Protocol, Sequence
+from typing import Any, Optional, Protocol, Sequence
 from ezmesh.utils.types import Number, NumpyFloat
-
-
-class MeshContext:
-    point_tags: dict[tuple[Number, Number, Number], int]
-    
-    def __init__(self) -> None:
-        self.point_tags = {}
-
-    def add_point(self, tag: int, coord: tuple[Number, Number, Number]):
-        self.point_tags[coord] = tag
-
-    def update(self):
-        gmsh.model.mesh.generate(1)
-        point_entities = gmsh.model.occ.getEntities(0)
-
-        node_tags, node_concatted, _ = gmsh.model.mesh.getNodes()
-        point_tags = np.array([entity[1] for entity in point_entities], dtype=np.uint16)
-        point_indices = np.argsort(point_tags-1)  # type: ignore
-        point_coords = np.array(node_concatted, dtype=NumpyFloat).reshape((-1, 3))[point_indices]
-
-        for i, point_coord in enumerate(point_coords):
-            self.point_tags[tuple(point_coord)] = point_indices[i]+1
 
 class DimType(Enum):
     POINT = 0
@@ -33,6 +11,53 @@ class DimType(Enum):
     SURFACE = 2
     VOLUME = 3
 
+
+class MeshContext:
+    point_tags: dict[tuple[Number, Number, Number], int]
+    point_coords: dict[int, tuple[Number, Number, Number]]
+    # edge_point_coods: dict[int, list[int]]
+    edges: dict[int, Any]
+    physical_groups: dict[tuple[DimType, str], int]
+
+    def __init__(self) -> None:
+        self.point_tags = {}
+        self.point_coords = {}
+        self.edges = {}
+        self.physical_groups = {}
+        # self.edge_point_coods = {}
+
+    def add_edge(self, edge):
+        self.edges[edge.tag] = edge
+
+    def add_point(self, tag: int, coord: tuple[Number, Number, Number]):
+        self.point_tags[coord] = tag
+        self.point_coords[tag] = coord
+
+    def update(self):
+        gmsh.model.mesh.generate(1)
+        point_entities = gmsh.model.occ.getEntities(0)
+        edge_entities = gmsh.model.occ.getEntities(1)
+
+        node_tags, node_concatted, _ = gmsh.model.mesh.getNodes()
+        point_tags = np.array([entity[1] for entity in point_entities], dtype=np.uint16)
+        point_indices = np.argsort(point_tags-1)  # type: ignore
+        point_coords = np.array(node_concatted, dtype=NumpyFloat).reshape((-1, 3))[point_indices]
+
+        # for (dim, edge_tag) in edge_entities:
+        #     edge_concatted_elements = gmsh.model.mesh.getElements(dim, tag=edge_tag)
+        #     edge_type, edge_node_tags_concatted = edge_concatted_elements[0][0], edge_concatted_elements[2][0]
+        #     edge_node_tags = np.array(edge_node_tags_concatted, dtype=np.uint16).reshape((-1, 2))
+        #     if edge_tag not in self.edge_point_coods:
+        #         self.edge_point_coods[edge_tag] = []
+        #     for (from_node_tag, to_node_tag) in edge_node_tags:
+        #         if from_node_tag in point_tags and from_node_tag not in  self.edge_point_coods[edge_tag]:
+        #             self.edge_point_coods[edge_tag].append(from_node_tag)
+        #         if to_node_tag in point_tags and to_node_tag not in  self.edge_point_coods[edge_tag]:
+        #             self.edge_point_coods[edge_tag].append(to_node_tag)
+
+        for i, point_coord in enumerate(point_coords):
+            self.point_tags[tuple(point_coord)] = point_indices[i]+1
+            self.point_coords[point_indices[i]+1] = tuple(point_coord)
 
 class GeoTransaction(Protocol):
     tag: Optional[int] = None
@@ -46,13 +71,13 @@ class GeoTransaction(Protocol):
         "completes transaction after syncronization and returns tag."
         ...
 
-GeoEntityId = tuple[int, tuple[Number, Number, Number]]
+GeoEntityId = tuple[DimType, tuple[Number, Number, Number]]
 
 class GeoEntity(GeoTransaction, Protocol):
     type: DimType
     "type of entity"
 
-    label: Optional[str] = None
+    label: Optional[str]
     "physical group label"        
 
     fields: Sequence = field(default_factory=list)
@@ -64,4 +89,4 @@ class GeoEntity(GeoTransaction, Protocol):
 
     @property
     def id(self) -> GeoEntityId:
-        return (self.type.value, self.center_of_mass)
+        return (self.type, self.center_of_mass)

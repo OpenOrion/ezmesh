@@ -69,3 +69,8 @@ class Mesh:
         if marker_name not in self.target_points:
             self.target_points[marker_name] = {}
         self.target_points[marker_name][point_index] = name
+
+
+    def show(self):
+        from .visualizer import visualize_mesh
+        visualize_mesh(self)

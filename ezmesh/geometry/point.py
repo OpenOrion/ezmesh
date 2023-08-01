@@ -3,13 +3,13 @@ from typing import Optional, Union, cast
 import gmsh
 import numpy as np
 import numpy.typing as npt
-from ezmesh.geometry.entity import GeoTransaction, MeshContext
+from ezmesh.geometry.entity import DimType, GeoEntity, MeshContext
 from ezmesh.utils.types import Number, NumpyFloat
 
 CoordType = Union[npt.NDArray[NumpyFloat], tuple[Number, Number], tuple[Number, Number, Number], list[Number]]
 
 @dataclass
-class Point(GeoTransaction):
+class Point(GeoEntity):
     coord: CoordType
     "coordinate of point"
 
@@ -24,6 +24,7 @@ class Point(GeoTransaction):
 
     def __post_init__(self):
         super().__init__()
+        self.type = DimType.POINT
         self.coord = np.asarray(self.coord, dtype=NumpyFloat)
         self.x = cast(Number, self.coord[0])
         self.y = cast(Number, self.coord[1])
