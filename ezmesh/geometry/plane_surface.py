@@ -1,7 +1,8 @@
 import gmsh
 from dataclasses import dataclass, field
 from typing import Optional, Sequence, cast
-from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
+from ezmesh.utils.types import DimType
+from ezmesh.geometry.entity import MeshContext, GeoEntity
 from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.field import Field

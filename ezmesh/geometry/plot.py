@@ -38,7 +38,6 @@ def plot_entities(
             z=exterior_coord[:,2],
             name=label,
             legendgroup=label,
-            # fill="toself",
         )
 
 

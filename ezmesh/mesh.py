@@ -32,6 +32,7 @@ class Mesh:
     element_types: Sequence[ElementType]
     points: npt.NDArray[NumpyFloat]
     markers: dict[str, Sequence[npt.NDArray[np.uint16]]]
+    marker_types: dict[str, Sequence[ElementType]]
     target_points: dict[str, dict[np.uint16, str]] = field(default_factory=dict)
 
 

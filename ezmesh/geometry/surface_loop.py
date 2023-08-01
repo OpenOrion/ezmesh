@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 from ezmesh.geometry.entity import MeshContext, GeoTransaction
 from ezmesh.geometry.plane_surface import PlaneSurface
-from ezmesh.utils.types import NumpyFloat
 
 @dataclass
 class SurfaceLoop(GeoTransaction):

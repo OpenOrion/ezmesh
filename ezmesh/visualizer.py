@@ -43,8 +43,6 @@ def to_rgb_str(color: Sequence[int]):
 
 
 
-
-
 def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=600):
     coord_html = widgets.HTML("Coords: ()")
 
@@ -80,7 +78,8 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
         marker_elements_to_name = {}
         for marker_name, marker_elements in mesh.markers.items():
             for elements in marker_elements:
-                marker_elements_to_name[(elements[0], elements[1])] = marker_name
+                for i in range(len(elements)-1):
+                    marker_elements_to_name[(elements[i], elements[i+1])] = marker_name
                 if marker_name in mesh.target_points and elements[1] in mesh.target_points[marker_name]:
                     target_point_sphere = pythreejs.Mesh(
                         geometry=pythreejs.SphereGeometry(radius=point_size),

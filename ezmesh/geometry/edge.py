@@ -4,7 +4,8 @@ from typing import Optional, Sequence
 import gmsh
 import numpy as np
 import numpy.typing as npt
-from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
+from ezmesh.utils.types import DimType
+from ezmesh.geometry.entity import MeshContext, GeoEntity
 from ezmesh.geometry.point import Point
 from ezmesh.utils.geometry import get_sampling
 from ezmesh.utils.types import NumpyFloat
@@ -26,7 +27,7 @@ class Edge(GeoEntity):
 
     def after_sync(self, ctx: MeshContext):
         ...
-        
+
     def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False) -> npt.NDArray[NumpyFloat]:
         assert self.tag is not None, "Edge must be synced before getting coordinates"
         bounds = gmsh.model.getParametrizationBounds(1, self.tag)

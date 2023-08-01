@@ -2,8 +2,9 @@
 from dataclasses import dataclass
 from typing import Optional, Sequence, cast
 import gmsh
+from ezmesh.utils.types import DimType
 from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.entity import DimType, MeshContext, GeoEntity
+from ezmesh.geometry.entity import MeshContext, GeoEntity
 from ezmesh.geometry.surface_loop import SurfaceLoop
 
 @dataclass
@@ -28,6 +29,20 @@ class Volume(GeoEntity):
     def after_sync(self, ctx: MeshContext):
         for surface_loop in self.surface_loops:
             surface_loop.after_sync(ctx)
+        
+        edge_physical_groups: dict[str, list[int]] = {}
+        for edge in ctx.edges.values():
+            assert isinstance(edge, Edge)
+            if not edge.label or not edge.tag:
+                continue
+            if edge.label not in edge_physical_groups:
+                edge_physical_groups[edge.label] = []
+            edge_physical_groups[edge.label].append(edge.tag)
+
+        for (label, edge_tags) in edge_physical_groups.items():
+            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
+            gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
+
 
     def get_edges(self):
         edges: Sequence[Edge] = []

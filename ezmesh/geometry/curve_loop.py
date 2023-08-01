@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence, Union
 import numpy as np
 import numpy.typing as npt
-from ezmesh.geometry.entity import DimType, MeshContext, GeoTransaction
+from ezmesh.utils.types import DimType
+from ezmesh.geometry.entity import MeshContext, GeoTransaction
 from ezmesh.geometry.edge import Curve, Edge, Line
 from ezmesh.geometry.point import Point
 from ezmesh.utils.types import NumpyFloat
@@ -60,22 +61,8 @@ class CurveLoop(GeoTransaction):
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
-        # for edge in self.edges:
-            # add physical groups here and account for duplicates
-            # if edge.tag and edge.label:
-            #     physical_group_id = (DimType.CURVE, edge.label)
-            #     if physical_group_id in ctx.physical_groups:
-            #         physical_group_tag = ctx.physical_groups[physical_group_id] 
-            #         physical_group_tag = gmsh.model.remove_physical_groups(DimType.CURVE.value, [edge.tag])
-
-            #     else:
-            #         physical_group_tag = gmsh.model.add_physical_group(DimType.CURVE.value, [edge.tag])
-            #         ctx.physical_groups[physical_group_id] = physical_group_tag
-
-            #     gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, edge.label)
-
-
-            # edge.after_sync(ctx)        
+        for edge in self.edges:
+            edge.after_sync(ctx)        
 
         for field in self.fields:
             field.after_sync(ctx, self)

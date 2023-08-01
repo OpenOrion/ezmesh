@@ -1,15 +1,9 @@
 from dataclasses import field
 import gmsh
 import numpy as np
-from enum import Enum
 from typing import Any, Optional, Protocol, Sequence
+from ezmesh.utils.types import DimType
 from ezmesh.utils.types import Number, NumpyFloat
-
-class DimType(Enum):
-    POINT = 0
-    CURVE = 1
-    SURFACE = 2
-    VOLUME = 3
 
 
 class MeshContext:
@@ -17,13 +11,11 @@ class MeshContext:
     point_coords: dict[int, tuple[Number, Number, Number]]
     # edge_point_coods: dict[int, list[int]]
     edges: dict[int, Any]
-    physical_groups: dict[tuple[DimType, str], int]
 
     def __init__(self) -> None:
         self.point_tags = {}
         self.point_coords = {}
         self.edges = {}
-        self.physical_groups = {}
         # self.edge_point_coods = {}
 
     def add_edge(self, edge):

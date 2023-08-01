@@ -3,7 +3,8 @@ from cadquery.selectors import Selector
 import gmsh
 import cadquery as cq
 from ezmesh.exporters import export_to_su2
-from ezmesh.geometry.entity import DimType, GeoEntity, GeoEntityId, GeoTransaction, MeshContext
+from ezmesh.utils.types import DimType
+from ezmesh.geometry.entity import GeoEntity, GeoEntityId, GeoTransaction, MeshContext
 from ezmesh.geometry.field import Field
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume

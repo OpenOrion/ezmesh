@@ -3,7 +3,8 @@ from typing import Optional, Union, cast
 import gmsh
 import numpy as np
 import numpy.typing as npt
-from ezmesh.geometry.entity import DimType, GeoEntity, MeshContext
+from ezmesh.utils.types import DimType
+from ezmesh.geometry.entity import GeoEntity, MeshContext
 from ezmesh.utils.types import Number, NumpyFloat
 
 CoordType = Union[npt.NDArray[NumpyFloat], tuple[Number, Number], tuple[Number, Number, Number], list[Number]]

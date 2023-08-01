@@ -16,7 +16,12 @@ def export_to_su2(meshes: Union[Mesh, Sequence[Mesh]], file_path: str):
                 su2_element_type = Su2ElementType[element_type.name]
                 element_types.append(su2_element_type)
             except:
-                print("Warning: Element type not supported: ", element_type.name)
+                raise ValueError("Warning: Element type not supported: ", element_type.name)
+        
+        marker_types = {}
+        for marker_label, marker_element_types in mesh.marker_types.items():
+            marker_types[marker_label] = [Su2ElementType[marker_element_type.name] for marker_element_type in marker_element_types]
+        
         zone = Zone(
             izone=izone+1,
             ndime=mesh.dim,
@@ -24,6 +29,7 @@ def export_to_su2(meshes: Union[Mesh, Sequence[Mesh]], file_path: str):
             element_types=element_types,
             points=mesh.points,
             markers=mesh.markers,
+            marker_types=marker_types
         )
         zones.append(zone)
     su2_mesh = Su2Mesh(len(zones), zones)
