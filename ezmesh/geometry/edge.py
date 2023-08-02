@@ -23,7 +23,7 @@ class Edge(GeoEntity):
         self.type = DimType.CURVE
 
     def before_sync(self, ctx: MeshContext):
-        ...
+        ctx.add_edge(self)
 
     def after_sync(self, ctx: MeshContext):
         ...
@@ -58,14 +58,15 @@ class Line(Edge):
     label: Optional[str] = None
     "physical group label"
 
-    def before_sync(self, ctx: MeshContext):        
+    def before_sync(self, ctx: MeshContext):
         start_tag = self.start.before_sync(ctx)
         end_tag = self.end.before_sync(ctx)
         self.tag = self.tag or gmsh.model.geo.add_line(start_tag, end_tag)
+        super().before_sync(ctx)   
         return self.tag
 
     def get_coords(self, num_pnts: int = 2):
-        return super().get_coords(num_pnts)
+        return np.array([self.start.coord, self.end.coord])
 
 @dataclass
 class Curve(Edge):
@@ -98,6 +99,8 @@ class Curve(Edge):
                 self.tag = gmsh.model.geo.add_bezier(ctrl_pnt_tags)
             else:
                 raise ValueError(f"Curve type {self.type} not specified")
+
+        super().before_sync(ctx)   
         return self.tag
     
 

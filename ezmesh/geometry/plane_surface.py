@@ -44,6 +44,13 @@ class PlaneSurface(GeoEntity):
         if self.is_quad_mesh:
             gmsh.model.mesh.set_recombine(DimType.SURFACE.value, self.tag)
 
+        # Assume that the PlaneSurface is the top-level
+        if ctx.dimension == 2:
+            for (label, edge_tags) in ctx.get_edge_physical_groups().items():
+                physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
+                gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
+
+
         for field in self.fields:
             field.after_sync(ctx, self)
 
@@ -52,6 +59,7 @@ class PlaneSurface(GeoEntity):
         for curve_loop in self.curve_loops:
             edges += curve_loop.edges
         return edges
+
 
     @staticmethod
     def from_tag(tag: int, ctx: MeshContext):

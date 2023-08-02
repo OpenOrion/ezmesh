@@ -35,11 +35,11 @@ class Point(GeoEntity):
         pnt_key = (self.x, self.y, self.z)
 
         if self.tag is None:
-            if (self.x, self.y, self.z) in ctx.point_tags:
+            if pnt_key in ctx.point_tags:
                 self.tag = ctx.point_tags[pnt_key]
             else:
                 self.tag = gmsh.model.geo.add_point(self.x, self.y, self.z, self.mesh_size)
-                ctx.add_point(pnt_key, self.tag)
+                ctx.add_point(self.tag, pnt_key)
 
         return self.tag
 

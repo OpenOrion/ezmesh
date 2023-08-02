@@ -9,10 +9,10 @@ from ezmesh.utils.types import Number, NumpyFloat
 class MeshContext:
     point_tags: dict[tuple[Number, Number, Number], int]
     point_coords: dict[int, tuple[Number, Number, Number]]
-    # edge_point_coods: dict[int, list[int]]
     edges: dict[int, Any]
 
-    def __init__(self) -> None:
+    def __init__(self, dimension: int = 3) -> None:
+        self.dimension = dimension
         self.point_tags = {}
         self.point_coords = {}
         self.edges = {}
@@ -24,6 +24,16 @@ class MeshContext:
     def add_point(self, tag: int, coord: tuple[Number, Number, Number]):
         self.point_tags[coord] = tag
         self.point_coords[tag] = coord
+
+    def get_edge_physical_groups(self):
+        edge_physical_groups: dict[str, list[int]] = {}
+        for edge in self.edges.values():
+            if not edge.label or not edge.tag:
+                continue
+            if edge.label not in edge_physical_groups:
+                edge_physical_groups[edge.label] = []
+            edge_physical_groups[edge.label].append(edge.tag)
+        return edge_physical_groups
 
     def update(self):
         gmsh.model.mesh.generate(1)

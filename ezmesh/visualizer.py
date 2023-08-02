@@ -41,8 +41,6 @@ def generate_rgb_values(n_colors, is_grayscale=False):
 def to_rgb_str(color: Sequence[int]):
     return f"rgb({int(color[0]*255)},{int(color[1]*255)},{int(color[2]*255)})"
 
-
-
 def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=600):
     coord_html = widgets.HTML("Coords: ()")
 
@@ -77,9 +75,17 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
         marker_segment_colors = []
         marker_elements_to_name = {}
         for marker_name, marker_elements in mesh.markers.items():
+            is_line = len(marker_elements) == 2
             for elements in marker_elements:
-                for i in range(len(elements)-1):
-                    marker_elements_to_name[(elements[i], elements[i+1])] = marker_name
+                # iterate all makrer element line combinations
+                for i in range(len(elements)):
+                    line_from_to = (elements[i], elements[i+1]) if i+1 < len(elements) else (elements[-1], elements[0])
+                    
+                    # only allow mesh line label override if line is appart of edge if already labeled for surface mesh line
+                    if (line_from_to in marker_elements_to_name and is_line) or line_from_to not in marker_elements_to_name:
+                        marker_elements_to_name[line_from_to] = marker_name
+
+
                 if marker_name in mesh.target_points and elements[1] in mesh.target_points[marker_name]:
                     target_point_sphere = pythreejs.Mesh(
                         geometry=pythreejs.SphereGeometry(radius=point_size),

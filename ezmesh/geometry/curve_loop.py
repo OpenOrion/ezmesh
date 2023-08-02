@@ -1,6 +1,6 @@
 import gmsh
 from dataclasses import dataclass, field
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Union, cast
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
@@ -40,24 +40,21 @@ class CurveLoop(GeoTransaction):
     def __post_init__(self):
         super().__init__()
         self.dim_type = DimType.CURVE
-        self.edge_groups: dict[str, list[Edge]] = {}
-        
+
+    @property
+    def edge_groups(self):
+        edge_groups: dict[str, list[Edge]] = {}
+        for edge in self.edges:
+            if edge.label:
+                name = cast(str, get_group_name(edge.label))
+                if name not in edge_groups:
+                    edge_groups[name] = []
+                edge_groups[name].append(edge)
+        return edge_groups
 
     def before_sync(self, ctx: MeshContext):
         edge_tags = [edge.before_sync(ctx) for edge in self.edges]
         self.tag = self.tag or gmsh.model.geo.add_curve_loop(edge_tags)
-        
-        self.edge_groups = {}
-        for edge in self.edges:
-            if edge.label:
-                edge_group = get_group_name(edge.label)
-                if edge_group not in self.edge_groups:
-                    self.edge_groups[edge_group] = []
-                self.edge_groups[edge_group].append(edge)
-        # if self.label is None and len(self.edge_groups) == 1 and len(list(self.edge_groups.values())[0]) == len(self.edges):
-        #     self.label = list(self.edge_groups.keys())[0]
-
-
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
@@ -90,12 +87,12 @@ class CurveLoop(GeoTransaction):
         property_index = 0
         for i, group in enumerate(groups):
             if isinstance(group, np.ndarray):
-                group_label = group_labels[property_index:] if isinstance(group_labels, list) else group_labels
+                group_label = get_group_name(group_labels[property_index:] if isinstance(group_labels, list) else group_labels)
                 edges += get_lines(group, mesh_size, group_label)
                 property_index += len(group)-1
             elif isinstance(group, tuple):
                 type, coords = group
-                group_label = group_labels[property_index] if isinstance(group_labels, list) else group_labels
+                group_label = get_group_name(group_labels[property_index] if isinstance(group_labels, list) else group_labels)
 
                 if type == "LineSegment":
                     edges += get_lines(coords, mesh_size, group_label)
@@ -112,7 +109,7 @@ class CurveLoop(GeoTransaction):
             
             # Ignore repeat start/end point
             if not np.all(edges[-1].end.coord == end_pnt.coord):
-                connector_label = group_labels[property_index] if isinstance(group_labels, list) else group_labels
+                connector_label = get_group_name(group_labels[property_index] if isinstance(group_labels, list) else group_labels)
                 connector_line = Line(edges[-1].end, end_pnt, connector_label)
                 edges.append(connector_line)
                 property_index += 1

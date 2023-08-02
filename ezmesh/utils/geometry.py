@@ -3,16 +3,19 @@ import numpy as np
 import gmsh
 from ezmesh.geometry.entity import GeoTransaction, MeshContext
 from ezmesh.importers import import_from_gmsh
-from ezmesh.utils.types import Number
+from ezmesh.utils.types import DimType, Number
 
 T = TypeVar('T')
 PropertyType = Union[list[T], T, dict[str, T]]
 
 
-def get_group_name(selector: str) -> str:
-    if "/" in selector:
-        return selector.split("/")[0]
-    return selector
+def get_group_name(selectors: Union[str, list[str]]):
+    group_names = []
+    for selector in (selectors if isinstance(selectors, list) else [selectors]):
+        if "/" in selector:
+            selector = selector.split("/")[0]
+        group_names.append(selector)
+    return group_names if len(group_names) > 1 else group_names[0]
 
 
 def get_property(property: Optional[Union[list[T], T, dict[str, T]]], index: int, label: Optional[str] = None, default: T = None) -> T:
@@ -57,5 +60,3 @@ def generate_mesh(transactions: Union[GeoTransaction, Sequence[GeoTransaction]],
     gmsh.option.set_number("General.ExpertMode", 1)
     gmsh.model.mesh.generate()
     return import_from_gmsh()
-
-

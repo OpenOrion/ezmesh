@@ -1,6 +1,6 @@
 import gmsh
-from dataclasses import dataclass
-from typing import Optional, Union, cast
+from dataclasses import dataclass, field
+from typing import Optional, Sequence, Union, cast
 from ezmesh.geometry.entity import MeshContext, GeoTransaction
 from ezmesh.geometry.point import Point
 from ezmesh.utils.geometry import PropertyType, get_property
@@ -92,7 +92,6 @@ class TransfiniteCurveField(Field):
                     coef=get_property(self.coefs, i, edge.label, 1.0)
                 )
             self.tags.add(curve_loop.tag)
-
 
 @dataclass
 class TransfiniteSurfaceField(Field):

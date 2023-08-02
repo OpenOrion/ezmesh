@@ -11,10 +11,11 @@ import numpy as np
 from ezmesh.utils.types import NumpyFloat
 
 def plot_entities(
-    entities: Sequence[GeoEntity], 
+    entities: Union[GeoEntity, Sequence[GeoEntity]], 
     title: str = "Surface", 
     samples_per_spline: int = 20, 
 ):
+    entities = entities if isinstance(entities, Sequence) else [entities]
     fig = go.Figure(
         layout=go.Layout(title=go.layout.Title(text=title))
     )
@@ -23,7 +24,7 @@ def plot_entities(
 
     for entity in entities:
         if isinstance(entities[0], (Volume, PlaneSurface, CurveLoop)):
-            exterior_coords += [(edge.label, edge.get_coords(samples_per_spline))for edge in cast(Union[Volume, PlaneSurface, CurveLoop], entity).get_edges()]
+            exterior_coords += [(edge.label, edge.get_coords(samples_per_spline)) for edge in cast(Union[Volume, PlaneSurface, CurveLoop], entity).get_edges()]
         elif isinstance(entities[0], Edge):
             exterior_coords += [(edge.label, edge.get_coords(samples_per_spline)) for edge in cast(Sequence[Edge], entities)]
         elif isinstance(entities[0], Point):
@@ -32,12 +33,13 @@ def plot_entities(
             raise ValueError(f"Unknown entity type: {type(entities[0])}")
 
     for label, exterior_coord in exterior_coords:
-        fig.add_scatter3d(
+        fig.add_scatter(
             x=exterior_coord[:,0],
             y=exterior_coord[:,1],
-            z=exterior_coord[:,2],
+            # z=exterior_coord[:,2],
             name=label,
-            legendgroup=label,
+            # legendgroup=label,
+            fill="toself"
         )
 
 

@@ -3,13 +3,14 @@ from cadquery.selectors import Selector
 import gmsh
 import cadquery as cq
 from ezmesh.exporters import export_to_su2
+from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.entity import GeoEntity, GeoEntityId, GeoTransaction, MeshContext
-from ezmesh.geometry.field import Field
+from ezmesh.geometry.field import Field, TransfiniteCurveField, TransfiniteSurfaceField
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume
 from ezmesh.mesh import Mesh
-from ezmesh.utils.geometry import generate_mesh
+from ezmesh.utils.geometry import PropertyType, generate_mesh, sync_geo
 from jupyter_cadquery import show
 
 class Geometry:
@@ -23,7 +24,14 @@ class Geometry:
     def __exit__(self, exc_type, exc_val, exc_tb):
         gmsh.finalize()
 
+    def sync(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]]):
+        sync_geo(transactions, self.ctx)
+
     def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]]):
+        if isinstance(transactions, PlaneSurface) or isinstance(transactions, Sequence) and isinstance(transactions[0], PlaneSurface):
+            self.ctx.dimension = 2
+        else:
+            self.ctx.dimension = 3
         self.mesh = generate_mesh(transactions, self.ctx)
         return self.mesh
 
@@ -32,8 +40,6 @@ class Geometry:
             export_to_su2(self.mesh, filename)
         else:
             gmsh.write(filename)
-
-
 
 
 class GeometryQL:
@@ -82,6 +88,9 @@ class GeometryQL:
 
     def vals(self) -> Sequence[GeoEntity]:
         cqobjects = self.workplane.vals()
+        return self.get_vals_for(cqobjects)
+
+    def get_vals_for(self, cqobjects: Sequence):
         entities = []
         for cqobject in cqobjects:
             if isinstance(cqobject, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
@@ -107,17 +116,24 @@ class GeometryQL:
         self.workplane = self.workplane.end(self.level)
         self.level = 0
 
-    def addPhysicalGroup(self, label: str):
+    def tag(self, name: str):
+        self.workplane = self.workplane.tag(name)
+        return self
+
+    def addPhysicalGroup(self, name: str, tagWorkspace: bool = True):
         for entity in self.vals():
-            entity.label = label
+            entity.label = name
+        if tagWorkspace:
+            self.tag(name)
         self.reset()
         return self
-    
-    def addFields(self, fields: Sequence[Field]):
-        for entity in self.vals():
-            entity.fields = [*entity.fields, *fields]
-        self.reset()
-        return self
+
+    # def addTransfiniteField(self, node_counts: PropertyType[int], mesh_types: Optional[PropertyType[str]] = None, coefs: Optional[PropertyType[float]] = None):
+    #     for entity in self.vals():
+    #         assert isinstance(entity, PlaneSurface), "field entity must be a PlaneSurface"
+    #         points = self.get_vals_for(self.workplane.vertices().vals())
+    #         surface_field = TransfiniteSurfaceField(points)
+    #         curve_field = TransfiniteCurveField(node_counts, mesh_types, coefs)
 
     def to_mesh(self):
         mesh = generate_mesh(self.vals(), self.ctx)
