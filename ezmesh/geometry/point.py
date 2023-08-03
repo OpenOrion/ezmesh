@@ -4,7 +4,7 @@ import gmsh
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.entity import GeoEntity, MeshContext
+from ezmesh.geometry.entity import GeoEntity, MeshContext, format_id
 from ezmesh.utils.types import Number, NumpyFloat
 
 CoordType = Union[npt.NDArray[NumpyFloat], tuple[Number, Number], tuple[Number, Number, Number], list[Number]]
@@ -39,9 +39,13 @@ class Point(GeoEntity):
                 self.tag = ctx.point_tags[pnt_key]
             else:
                 self.tag = gmsh.model.geo.add_point(self.x, self.y, self.z, self.mesh_size)
-                ctx.add_point(self.tag, pnt_key)
+                ctx.add_point(self)
 
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
         return super().after_sync(ctx)
+    
+    @property
+    def center_of_mass(self):
+        return tuple(format_id(x) for x in self.coord)

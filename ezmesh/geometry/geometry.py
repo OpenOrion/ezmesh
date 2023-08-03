@@ -1,17 +1,36 @@
-from typing import Optional, Sequence, Union
+from typing import Callable, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
 import gmsh
 import cadquery as cq
+import numpy as np
 from ezmesh.exporters import export_to_su2
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.entity import GeoEntity, GeoEntityId, GeoTransaction, MeshContext
+from ezmesh.geometry.entity import GeoEntity, GeoEntityId, GeoTransaction, MeshContext, format_id
 from ezmesh.geometry.field import Field, TransfiniteCurveField, TransfiniteSurfaceField
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume
 from ezmesh.mesh import Mesh
 from ezmesh.utils.geometry import PropertyType, generate_mesh, sync_geo
 from jupyter_cadquery import show
+
+def get_cq_object_id(cqobject):
+    if isinstance(cqobject, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
+        type = DimType.VOLUME
+    elif isinstance(cqobject, cq.occ_impl.shapes.Face):
+        type = DimType.SURFACE
+    elif isinstance(cqobject, cq.occ_impl.shapes.Edge):
+        type = DimType.CURVE
+    elif isinstance(cqobject, cq.occ_impl.shapes.Vertex):
+        type = DimType.POINT
+    else:
+        raise ValueError(f"cannot get id for {cqobject}")
+
+    if isinstance(cqobject, cq.occ_impl.shapes.Vertex):
+        center_of_mass = tuple(format_id(x) for x in (cqobject.X, cqobject.Y, cqobject.Z))
+    else:
+        center_of_mass =  tuple(format_id(x) for x in cqobject.centerOfMass(cqobject).toTuple())
+    return (type, center_of_mass)
 
 class Geometry:
     def __init__(self) -> None:
@@ -44,22 +63,25 @@ class Geometry:
 
 class GeometryQL:
     def __init__(self, target: Union[cq.Workplane, str]) -> None:
+        self.target = target
         self.workplane = cq.importers.importStep(target) if isinstance(target, str) else target
         self.file_path = target if isinstance(target, str) else "workplane.step"
         self.level = 0
         self.transactions = []
         self.mesh: Optional[Mesh] = None
         self.ctx = MeshContext()
-        
+        self.register: dict[GeoEntityId, GeoEntity] = {}
+        self.update()
+
+    def update(self):
         gmsh.initialize()
-        if not isinstance(target, str) and self.file_path.endswith(".step"):
+        if not isinstance(self.target, str) and self.file_path.endswith(".step"):
             cq.exporters.export(self.workplane, self.file_path)
 
         gmsh.open(self.file_path)
         gmsh.model.geo.synchronize()
 
         self.ctx.update() 
-        self.register: dict[GeoEntityId, GeoEntity] = {}
         for (_, volume_tag) in gmsh.model.occ.getEntities(DimType.VOLUME.value):
             volume = Volume.from_tag(volume_tag, self.ctx)
             self.transactions.append(volume)
@@ -70,6 +92,18 @@ class GeometryQL:
                     for curve_loop in surface.curve_loops:
                         for edge in curve_loop.edges:
                             self.register[edge.id] = edge
+        
+        for tag, point in self.ctx.points.items():
+            self.register[point.id] = point
+
+        for cq_object in [*self.workplane.faces().vals(), *self.workplane.edges().vals(), *self.workplane.vertices().vals()]:
+            id = get_cq_object_id(cq_object)
+            tag = f"{id[0].name.lower()}/{self.register[id].tag}"
+            self.workplane.newObject([cq_object]).tag(tag)
+
+    def reset(self):
+        self.workplane = self.workplane.end(self.level)
+        self.level = 0
 
     def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None):
         self.workplane = self.workplane.faces(selector, tag)
@@ -88,36 +122,19 @@ class GeometryQL:
 
     def vals(self) -> Sequence[GeoEntity]:
         cqobjects = self.workplane.vals()
-        return self.get_vals_for(cqobjects)
-
-    def get_vals_for(self, cqobjects: Sequence):
         entities = []
         for cqobject in cqobjects:
-            if isinstance(cqobject, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
-                type = DimType.VOLUME
-            elif isinstance(cqobject, cq.occ_impl.shapes.Face):
-                type = DimType.SURFACE
-            elif isinstance(cqobject, cq.occ_impl.shapes.Edge):
-                type = DimType.CURVE
-            elif isinstance(cqobject, cq.occ_impl.shapes.Vertex):
-                type = DimType.POINT
-            else:
-                raise ValueError(f"cannot get id for {cqobject}")
-
-            if isinstance(cqobject, cq.occ_impl.shapes.Vertex):
-                center_of_mass = tuple(round(x, 5) for x in (cqobject.X, cqobject.Y, cqobject.Z))
-            else:
-                center_of_mass =  tuple(round(x, 5) for x in cqobject.centerOfMass(cqobject).toTuple())
-            id = (type, center_of_mass)
+            id = get_cq_object_id(cqobject)
             entities.append(self.register[id])
         return entities
-    
-    def reset(self):
-        self.workplane = self.workplane.end(self.level)
-        self.level = 0
 
     def tag(self, name: str):
         self.workplane = self.workplane.tag(name)
+        return self
+
+    def workplaneFromTagged(self, name: str):
+        self.workplane = self.workplane._getTagged(name)
+        self.level = 0
         return self
 
     def addPhysicalGroup(self, name: str, tagWorkspace: bool = True):

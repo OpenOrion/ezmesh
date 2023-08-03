@@ -8,22 +8,22 @@ from ezmesh.utils.types import Number, NumpyFloat
 
 class MeshContext:
     point_tags: dict[tuple[Number, Number, Number], int]
-    point_coords: dict[int, tuple[Number, Number, Number]]
+    points: dict[int, Any]
     edges: dict[int, Any]
 
     def __init__(self, dimension: int = 3) -> None:
         self.dimension = dimension
         self.point_tags = {}
-        self.point_coords = {}
+        self.points = {}
         self.edges = {}
         # self.edge_point_coods = {}
 
     def add_edge(self, edge):
         self.edges[edge.tag] = edge
 
-    def add_point(self, tag: int, coord: tuple[Number, Number, Number]):
-        self.point_tags[coord] = tag
-        self.point_coords[tag] = coord
+    def add_point(self, point):
+        self.point_tags[tuple(point.coord)] = point.tag
+        self.points[point.tag] = point
 
     def get_edge_physical_groups(self):
         edge_physical_groups: dict[str, list[int]] = {}
@@ -41,9 +41,11 @@ class MeshContext:
         edge_entities = gmsh.model.occ.getEntities(1)
 
         node_tags, node_concatted, _ = gmsh.model.mesh.getNodes()
-        point_tags = np.array([entity[1] for entity in point_entities], dtype=np.uint16)
-        point_indices = np.argsort(point_tags-1)  # type: ignore
-        point_coords = np.array(node_concatted, dtype=NumpyFloat).reshape((-1, 3))[point_indices]
+        node_coords = np.array(node_concatted, dtype=NumpyFloat).reshape((-1, 3))
+
+        # TODO: for some reason some points are mission when getting directly from point entities
+        # point_tags = np.argsort(np.array([entity[1] for entity in point_entities], dtype=np.uint16))
+        # point_coords = np.array(node_concatted, dtype=NumpyFloat).reshape((-1, 3))[point_tags-1]
 
         # for (dim, edge_tag) in edge_entities:
         #     edge_concatted_elements = gmsh.model.mesh.getElements(dim, tag=edge_tag)
@@ -57,9 +59,9 @@ class MeshContext:
         #         if to_node_tag in point_tags and to_node_tag not in  self.edge_point_coods[edge_tag]:
         #             self.edge_point_coods[edge_tag].append(to_node_tag)
 
-        for i, point_coord in enumerate(point_coords):
-            self.point_tags[tuple(point_coord)] = point_indices[i]+1
-            self.point_coords[point_indices[i]+1] = tuple(point_coord)
+        from ezmesh.geometry.point import Point
+        for i, point_coord in enumerate(node_coords):
+            self.add_point(Point(point_coord, tag=node_tags[i]))
 
 class GeoTransaction(Protocol):
     tag: Optional[int] = None
@@ -73,7 +75,10 @@ class GeoTransaction(Protocol):
         "completes transaction after syncronization and returns tag."
         ...
 
-GeoEntityId = tuple[DimType, tuple[Number, Number, Number]]
+GeoEntityId = tuple[DimType, tuple[float, float, float]]
+
+def format_id(num: Number):
+    return round(float(num), 5)
 
 class GeoEntity(GeoTransaction, Protocol):
     type: DimType
@@ -87,7 +92,7 @@ class GeoEntity(GeoTransaction, Protocol):
 
     @property
     def center_of_mass(self):
-        return tuple(round(x, 5) for x in gmsh.model.occ.getCenterOfMass(self.type.value, self.tag))
+        return tuple(format_id(x) for x in gmsh.model.occ.getCenterOfMass(self.type.value, self.tag))
 
     @property
     def id(self) -> GeoEntityId:

@@ -3,7 +3,7 @@ import numpy as np
 import gmsh
 from ezmesh.geometry.entity import GeoTransaction, MeshContext
 from ezmesh.importers import import_from_gmsh
-from ezmesh.utils.types import DimType, Number
+from ezmesh.utils.types import Number
 
 T = TypeVar('T')
 PropertyType = Union[list[T], T, dict[str, T]]
