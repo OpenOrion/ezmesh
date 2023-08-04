@@ -62,7 +62,7 @@ def import_from_gmsh() -> Mesh:
     node_indices = np.argsort(node_tags-1)  # type: ignore
     points = np.array(points_concatted, dtype=NumpyFloat).reshape((-1, 3))[node_indices]
 
-    grouped_concatted_elements = gmsh.model.mesh.getElements(DimType.SURFACE.value)
+    grouped_concatted_elements = gmsh.model.mesh.getElements()
     for element_type_value, grouped_element_tags, grouped_node_tags_concatted in zip(*grouped_concatted_elements):
         if element_type_value == ElementType.POINT.value or element_type_value == ElementType.LINE.value:
             continue

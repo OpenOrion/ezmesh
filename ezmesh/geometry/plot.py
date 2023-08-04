@@ -2,7 +2,7 @@ from typing import Optional, Sequence, Union, cast
 from plotly import graph_objects as go
 from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.entity import GeoEntity
+from ezmesh.geometry.transaction import GeoEntityTransaction
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.geometry.point import Point
 from ezmesh.geometry.volume import Volume
@@ -11,7 +11,7 @@ import numpy as np
 from ezmesh.utils.types import NumpyFloat
 
 def plot_entities(
-    entities: Union[GeoEntity, Sequence[GeoEntity]], 
+    entities: Union[GeoEntityTransaction, Sequence[GeoEntityTransaction]], 
     title: str = "Surface", 
     samples_per_spline: int = 20, 
 ):

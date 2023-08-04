@@ -77,7 +77,7 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
         for marker_name, marker_elements in mesh.markers.items():
             is_line = len(marker_elements) == 2
             for elements in marker_elements:
-                # iterate all makrer element line combinations
+                # iterate all marker element line combinations
                 for i in range(len(elements)):
                     line_from_to = (elements[i], elements[i+1]) if i+1 < len(elements) else (elements[-1], elements[0])
                     
@@ -115,11 +115,12 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
                 else:
                     non_marker_line_points.append(line_points)
 
-        non_marker_lines = pythreejs.LineSegments2(
-            cast(Any, pythreejs.LineSegmentsGeometry(positions=non_marker_line_points)),
-            cast(Any, pythreejs.LineMaterial(linewidth=1, color=to_rgb_str(mesh_color)))
-        )
-        marker_line_segments.append(non_marker_lines)
+        if len(non_marker_line_points) > 0:
+            non_marker_lines = pythreejs.LineSegments2(
+                cast(Any, pythreejs.LineSegmentsGeometry(positions=non_marker_line_points)),
+                cast(Any, pythreejs.LineMaterial(linewidth=1, color=to_rgb_str(mesh_color)))
+            )
+            marker_line_segments.append(non_marker_lines)
 
         if len(marker_line_points) > 0:
             marker_lines = pythreejs.LineSegments2(
@@ -128,16 +129,17 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
             )
             marker_line_segments.append(marker_lines)
 
-        buffer_geom = pythreejs.BufferGeometry(attributes=dict(
-            position=pythreejs.BufferAttribute(mesh.points, normalized=False),
-            index=pythreejs.BufferAttribute(np.concatenate(mesh.elements), normalized=False),
-        ))
+        if len(mesh.elements) > 0:
+            buffer_geom = pythreejs.BufferGeometry(attributes=dict(
+                position=pythreejs.BufferAttribute(mesh.points, normalized=False),
+                index=pythreejs.BufferAttribute(np.concatenate(mesh.elements), normalized=False),
+            ))
 
-        buffer_mesh = pythreejs.Mesh(
-            geometry=buffer_geom,
-            material=pythreejs.MeshLambertMaterial(color='white', side='DoubleSide'),
-        )
-        buffer_meshes.append(buffer_mesh)
+            buffer_mesh = pythreejs.Mesh(
+                geometry=buffer_geom,
+                material=pythreejs.MeshLambertMaterial(color='white', side='DoubleSide'),
+            )
+            buffer_meshes.append(buffer_mesh)
 
     camera = pythreejs.PerspectiveCamera(position=[0, 0, 1], far=100000, near=0.001, aspect=cast(Any, view_width/view_height))
     scene = pythreejs.Scene(children=[*marker_line_segments, *buffer_meshes, *target_point_spheres, pythreejs.AmbientLight(intensity=0.8)], background="black")

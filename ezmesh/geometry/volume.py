@@ -4,11 +4,11 @@ from typing import Optional, Sequence, cast
 import gmsh
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.entity import MeshContext, GeoEntity
+from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
 from ezmesh.geometry.surface_loop import SurfaceLoop
 
 @dataclass
-class Volume(GeoEntity):
+class Volume(GeoEntityTransaction):
     surface_loops: Sequence[SurfaceLoop]
     "surface loop of volume"
 
@@ -33,6 +33,9 @@ class Volume(GeoEntity):
         for (label, edge_tags) in ctx.get_edge_physical_groups().items():
             physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
             gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
+
+        # physical_group_tag = gmsh.model.add_physical_group(DimType.VOLUME.value, [self.tag])
+
 
     def get_edges(self):
         edges: Sequence[Edge] = []

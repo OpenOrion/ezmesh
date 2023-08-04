@@ -4,13 +4,13 @@ import gmsh
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.entity import GeoEntity, MeshContext, format_id
+from ezmesh.geometry.transaction import GeoEntityTransaction, MeshContext, format_coord_id
 from ezmesh.utils.types import Number, NumpyFloat
 
 CoordType = Union[npt.NDArray[NumpyFloat], tuple[Number, Number], tuple[Number, Number, Number], list[Number]]
 
 @dataclass
-class Point(GeoEntity):
+class Point(GeoEntityTransaction):
     coord: CoordType
     "coordinate of point"
 
@@ -26,13 +26,13 @@ class Point(GeoEntity):
     def __post_init__(self):
         super().__init__()
         self.type = DimType.POINT
-        self.coord = np.asarray(self.coord, dtype=NumpyFloat)
         self.x = cast(Number, self.coord[0])
         self.y = cast(Number, self.coord[1])
         self.z = cast(Number, self.coord[2] if len(self.coord) == 3 else 0)
+        self.coord = np.array([self.x, self.y, self.z], dtype=NumpyFloat)
 
     def before_sync(self, ctx: MeshContext):
-        pnt_key = (self.x, self.y, self.z)
+        pnt_key = format_coord_id(self.coord, round_by=None)
 
         if self.tag is None:
             if pnt_key in ctx.point_tags:
@@ -48,4 +48,4 @@ class Point(GeoEntity):
     
     @property
     def center_of_mass(self):
-        return tuple(format_id(x) for x in self.coord)
+        return format_coord_id(self.coord)

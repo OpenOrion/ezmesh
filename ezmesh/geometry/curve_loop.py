@@ -4,12 +4,11 @@ from typing import Optional, Sequence, Union, cast
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.entity import MeshContext, GeoTransaction
+from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
 from ezmesh.geometry.edge import Curve, Edge, Line
 from ezmesh.geometry.point import Point
 from ezmesh.utils.types import NumpyFloat
 from ezmesh.utils.geometry import get_group_name
-from ezmesh.geometry.field import Field
 
 GroupType = Union[npt.NDArray[NumpyFloat], tuple[str, npt.NDArray[NumpyFloat]]]
 
@@ -24,22 +23,18 @@ def get_lines(coords: npt.NDArray[NumpyFloat], mesh_size: float, labels: Union[s
     ]
 
 @dataclass
-class CurveLoop(GeoTransaction):
+class CurveLoop(GeoEntityTransaction):
     edges: Sequence[Edge]
     "Lines of curve"
 
     label: Optional[str] = None
     "physical group label"
 
-    fields: Sequence[Field] = field(default_factory=list)
-    "fields to be added to the curve loop"
-
     tag: Optional[int] = None
     "tag of the curve loop when passing by reference"
 
     def __post_init__(self):
-        super().__init__()
-        self.dim_type = DimType.CURVE
+        self.type = DimType.CURVE
 
     @property
     def edge_groups(self):
@@ -61,9 +56,6 @@ class CurveLoop(GeoTransaction):
         for edge in self.edges:
             edge.after_sync(ctx)        
 
-        for field in self.fields:
-            field.after_sync(ctx, self)
-
     def get_exterior_coords(self, num_pnts: int):
         coords = [
             edge.get_coords(num_pnts)
@@ -77,8 +69,7 @@ class CurveLoop(GeoTransaction):
         coordsOrGroups: Union[npt.NDArray[NumpyFloat], Sequence[GroupType]],
         mesh_size: float,
         group_labels: Optional[Union[str, list[str]]] = None,
-        label: Optional[str] = None,
-        fields: Sequence[Field] = [],
+        label: Optional[str] = None
     ):
         groups = coordsOrGroups if isinstance(coordsOrGroups, Sequence) else [coordsOrGroups]
         group_labels = group_labels if group_labels else label
@@ -114,7 +105,7 @@ class CurveLoop(GeoTransaction):
                 edges.append(connector_line)
                 property_index += 1
 
-        return CurveLoop(edges, label, fields)
+        return CurveLoop(edges, label)
     
     def get_edges(self):
         return self.edges

@@ -5,13 +5,13 @@ import gmsh
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.entity import MeshContext, GeoEntity
+from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
 from ezmesh.geometry.point import Point
 from ezmesh.utils.geometry import get_sampling
 from ezmesh.utils.types import NumpyFloat
 
 
-class Edge(GeoEntity):
+class Edge(GeoEntityTransaction):
     start: Point
     "starting point of edge"
 

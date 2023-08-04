@@ -1,4 +1,4 @@
-from .entity import MeshContext, GeoTransaction
+from .transaction import *
 from .point import Point
 from .edge import *
 from .curve_loop import CurveLoop

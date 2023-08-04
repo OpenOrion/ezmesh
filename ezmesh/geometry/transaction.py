@@ -1,9 +1,12 @@
 from dataclasses import field
 import gmsh
 import numpy as np
-from typing import Any, Optional, Protocol, Sequence
+from typing import Any, Callable, Iterable, Optional, Protocol, Sequence
 from ezmesh.utils.types import DimType
 from ezmesh.utils.types import Number, NumpyFloat
+
+def format_coord_id(iterable: Iterable[Number], round_by: Optional[int] = 5):
+    return tuple(round(float(num), round_by) if round_by else float(num)  for num in iterable)
 
 
 class MeshContext:
@@ -22,7 +25,7 @@ class MeshContext:
         self.edges[edge.tag] = edge
 
     def add_point(self, point):
-        self.point_tags[tuple(point.coord)] = point.tag
+        self.point_tags[format_coord_id(point.coord, round_by=None)] = point.tag
         self.points[point.tag] = point
 
     def get_edge_physical_groups(self):
@@ -63,11 +66,13 @@ class MeshContext:
         for i, point_coord in enumerate(node_coords):
             self.add_point(Point(point_coord, tag=node_tags[i]))
 
-class GeoTransaction(Protocol):
-    tag: Optional[int] = None
-    "tag of entity"
 
-    def before_sync(self, ctx: MeshContext) -> int:
+
+GeoEntityId = tuple[DimType, tuple[float, float, float]]
+
+
+class GeoTransaction(Protocol):
+    def before_sync(self, ctx: MeshContext):
         "completes transaction before syncronization and returns tag."
         ...
 
@@ -75,12 +80,22 @@ class GeoTransaction(Protocol):
         "completes transaction after syncronization and returns tag."
         ...
 
-GeoEntityId = tuple[DimType, tuple[float, float, float]]
+class CommandTransaction(GeoTransaction):
+    def __init__(self, before_sync: Callable[[MeshContext], None], after_sync: Callable[[MeshContext], None]):
+        self.before_sync_func = before_sync
+        self.after_sync_func = after_sync
+    
+    def before_sync(self, ctx: MeshContext):
+        self.before_sync_func(ctx)
 
-def format_id(num: Number):
-    return round(float(num), 5)
+    def after_sync(self, ctx: MeshContext):
+        self.after_sync_func(ctx)
 
-class GeoEntity(GeoTransaction, Protocol):
+
+class GeoEntityTransaction(GeoTransaction, Protocol):
+    tag: Optional[int] = None
+    "tag of entity"
+
     type: DimType
     "type of entity"
 
@@ -90,9 +105,12 @@ class GeoEntity(GeoTransaction, Protocol):
     fields: Sequence = field(default_factory=list)
     "fields to be added to the surface"
 
+    def before_sync(self, ctx: MeshContext) -> int:
+        ...
+
     @property
     def center_of_mass(self):
-        return tuple(format_id(x) for x in gmsh.model.occ.getCenterOfMass(self.type.value, self.tag))
+        return format_coord_id(gmsh.model.occ.getCenterOfMass(self.type.value, self.tag))
 
     @property
     def id(self) -> GeoEntityId:

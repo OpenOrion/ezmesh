@@ -1,7 +1,7 @@
 from typing import Optional, Sequence, TypeVar, Union, cast
 import numpy as np
 import gmsh
-from ezmesh.geometry.entity import GeoTransaction, MeshContext
+from ezmesh.geometry.transaction import GeoTransaction, MeshContext
 from ezmesh.importers import import_from_gmsh
 from ezmesh.utils.types import Number
 
@@ -42,7 +42,7 @@ def get_sampling(start: Number, end: Number, num_samples: int, is_cosine_samplin
     else:
         return np.linspace(start, end, num_samples, endpoint=True)
 
-def sync_geo(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx: MeshContext):
+def commit_transactions(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx: MeshContext):
     if isinstance(transactions, Sequence):
         for transaction in transactions:
             transaction.before_sync(ctx)
@@ -55,8 +55,9 @@ def sync_geo(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx:
     else:
         transactions.after_sync(ctx)
 
-def generate_mesh(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx: MeshContext):
-    sync_geo(transactions, ctx)
+def generate_mesh(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx: MeshContext, dim: int = 3):
+    commit_transactions(transactions, ctx)
     gmsh.option.set_number("General.ExpertMode", 1)
-    gmsh.model.mesh.generate()
+    gmsh.model.mesh.generate(dim)
+
     return import_from_gmsh()

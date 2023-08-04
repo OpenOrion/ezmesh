@@ -1,14 +1,13 @@
 import gmsh
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Sequence, cast
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.entity import MeshContext, GeoEntity
+from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
 from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.field import Field
 
 @dataclass
-class PlaneSurface(GeoEntity):
+class PlaneSurface(GeoEntityTransaction):
     curve_loops: Sequence[CurveLoop]
     "outline curve loop that make up the surface"
 
@@ -17,9 +16,6 @@ class PlaneSurface(GeoEntity):
 
     is_quad_mesh: bool = False
     "if true, surface mesh is made of quadralateral cells, else triangular cells"
-
-    fields: Sequence[Field] = field(default_factory=list)
-    "fields to be added to the surface"
 
     tag: Optional[int] = None
     "tag of the surface"
@@ -49,10 +45,6 @@ class PlaneSurface(GeoEntity):
             for (label, edge_tags) in ctx.get_edge_physical_groups().items():
                 physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
                 gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
-
-
-        for field in self.fields:
-            field.after_sync(ctx, self)
 
     def get_edges(self):
         edges: Sequence[Edge] = []
