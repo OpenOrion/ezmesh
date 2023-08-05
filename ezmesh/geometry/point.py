@@ -4,7 +4,7 @@ import gmsh
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import GeoEntityTransaction, MeshContext, format_coord_id
+from ezmesh.geometry.transaction import GeoEntityId, GeoEntityTransaction, MeshContext, format_coord_id
 from ezmesh.utils.types import Number, NumpyFloat
 
 CoordType = Union[npt.NDArray[NumpyFloat], tuple[Number, Number], tuple[Number, Number, Number], list[Number]]
@@ -49,3 +49,9 @@ class Point(GeoEntityTransaction):
     @property
     def center_of_mass(self):
         return format_coord_id(self.coord)
+
+
+    @property
+    def id(self) -> GeoEntityId:
+        vector_id = format_coord_id(self.coord)
+        return (self.type, vector_id)

@@ -43,23 +43,33 @@ class BoundaryLayerField(GeoTransaction):
 
     def after_sync(self, ctx: MeshContext):
         if not self.is_run:
-            tag = gmsh.model.mesh.field.add('BoundaryLayer')
-            edge_tags = [edge.tag for edge in self.edges]
-            gmsh.model.mesh.field.setNumbers(tag, 'CurvesList', edge_tags)
-            if self.aniso_max:
-                gmsh.model.mesh.field.setNumber(tag, "AnisoMax", self.aniso_max)
-            if self.intersect_metrics:
-                gmsh.model.mesh.field.setNumber(tag, "IntersectMetrics", self.intersect_metrics)
-            if self.is_quad_mesh:
-                gmsh.model.mesh.field.setNumber(tag, "Quads", int(self.is_quad_mesh))
-            if self.hfar:
-                gmsh.model.mesh.field.setNumber(tag, "hfar", self.hfar)
-            if self.hwall_n:
-                gmsh.model.mesh.field.setNumber(tag, "hwall_n", self.hwall_n)
-            if self.ratio:
-                gmsh.model.mesh.field.setNumber(tag, "ratio", self.ratio)
-            if self.thickness:
-                gmsh.model.mesh.field.setNumber(tag, "thickness", self.thickness)
+
+
+            N = 10 # number of layers
+            r = 2 # ratio
+            d = [1.7e-5] # thickness of first layer
+            for i in range(1, N): 
+                d.append(d[-1] + d[0] * r**i)
+            extbl = gmsh.model.geo.extrudeBoundaryLayer(gmsh.model.getEntities(2), [1] * N, d, True)
+
+
+            # tag = gmsh.model.mesh.field.add('BoundaryLayer')
+            # edge_tags = [edge.tag for edge in self.edges]
+            # gmsh.model.mesh.field.setNumbers(tag, 'CurvesList', edge_tags)
+            # if self.aniso_max:
+            #     gmsh.model.mesh.field.setNumber(tag, "AnisoMax", self.aniso_max)
+            # if self.intersect_metrics:
+            #     gmsh.model.mesh.field.setNumber(tag, "IntersectMetrics", self.intersect_metrics)
+            # if self.is_quad_mesh:
+            #     gmsh.model.mesh.field.setNumber(tag, "Quads", int(self.is_quad_mesh))
+            # if self.hfar:
+            #     gmsh.model.mesh.field.setNumber(tag, "hfar", self.hfar)
+            # if self.hwall_n:
+            #     gmsh.model.mesh.field.setNumber(tag, "hwall_n", self.hwall_n)
+            # if self.ratio:
+            #     gmsh.model.mesh.field.setNumber(tag, "ratio", self.ratio)
+            # if self.thickness:
+            #     gmsh.model.mesh.field.setNumber(tag, "thickness", self.thickness)
 
             gmsh.model.mesh.field.setAsBoundaryLayer(tag)
             self.is_run = True

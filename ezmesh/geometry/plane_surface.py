@@ -26,25 +26,27 @@ class PlaneSurface(GeoEntityTransaction):
     def before_sync(self, ctx: MeshContext):
         curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]
         self.tag = self.tag or gmsh.model.geo.add_plane_surface(curve_loop_tags)
+        ctx.add_surface(self)
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
         for curve_loop in self.curve_loops:
             curve_loop.after_sync(ctx)
 
-        # NOTICE: add physical group for surface regardless of label because SU2 output bug
-        physical_group_tag = gmsh.model.add_physical_group(DimType.SURFACE.value, [self.tag])
-        if self.label is not None:
-            gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, self.label)
-
         if self.is_quad_mesh:
             gmsh.model.mesh.set_recombine(DimType.SURFACE.value, self.tag)
 
         # Assume that the PlaneSurface is the top-level
         if ctx.dimension == 2:
-            for (label, edge_tags) in ctx.get_edge_physical_groups().items():
+            for (label, edge_tags) in ctx.get_physical_groups(DimType.CURVE).items():
                 physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
                 gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
+
+            # NOTICE: add physical group for surface regardless of label because SU2 output bug
+            physical_group_tag = gmsh.model.add_physical_group(DimType.SURFACE.value, [self.tag])
+            if self.label is not None:
+                gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, self.label)
+
 
     def get_edges(self):
         edges: Sequence[Edge] = []

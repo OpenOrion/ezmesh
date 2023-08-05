@@ -1,4 +1,4 @@
-from typing import Callable, Literal, Optional, Sequence, Union, cast
+from typing import Callable, Literal, Optional, Sequence, Type, Union, cast
 from cadquery.selectors import Selector
 import gmsh
 import cadquery as cq
@@ -8,18 +8,21 @@ from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.transaction import GeoEntityTransaction, GeoEntityId, GeoTransaction, MeshContext, format_coord_id
-from ezmesh.geometry.field import BoundaryLayerField, TransfiniteCurveField, TransfiniteSurfaceField
+from ezmesh.geometry.field import BoundaryLayerField
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume
 from ezmesh.mesh import Mesh
 from ezmesh.utils.geometry import PropertyType, generate_mesh, commit_transactions
 from jupyter_cadquery import show
+from cadquery.selectors import AreaNthSelector
 
 def get_cq_object_id(cqobject):
     if isinstance(cqobject, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
         type = DimType.VOLUME
     elif isinstance(cqobject, cq.occ_impl.shapes.Face):
         type = DimType.SURFACE
+    elif isinstance(cqobject, cq.occ_impl.shapes.Wire):
+        type = DimType.CURVE_LOOP
     elif isinstance(cqobject, cq.occ_impl.shapes.Edge):
         type = DimType.CURVE
     elif isinstance(cqobject, cq.occ_impl.shapes.Vertex):
@@ -28,10 +31,46 @@ def get_cq_object_id(cqobject):
         raise ValueError(f"cannot get id for {cqobject}")
 
     if isinstance(cqobject, cq.occ_impl.shapes.Vertex):
-        center_of_mass = format_coord_id((cqobject.X, cqobject.Y, cqobject.Z))
+        vector_id = format_coord_id((cqobject.X, cqobject.Y, cqobject.Z))
+    elif isinstance(cqobject, cq.occ_impl.shapes.Wire):
+        vector_id = format_coord_id(np.average([edge.centerOfMass(cqobject).toTuple() for edge in cqobject.Edges()], axis=0))
     else:
-        center_of_mass =  format_coord_id(cqobject.centerOfMass(cqobject).toTuple())
-    return (type, center_of_mass)
+        vector_id =  format_coord_id(cqobject.centerOfMass(cqobject).toTuple())
+    return (type, vector_id)
+
+def get_cq_objects(workspace: cq.Workplane, type: Type):
+    vals = []
+    for val in workspace.vals():
+        if isinstance(val, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
+            if type in (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid):
+                vals.append(val)
+            elif type == cq.occ_impl.shapes.Face:
+                vals += val.Faces()
+            elif type == cq.occ_impl.shapes.Edge:
+                vals += val.Edges()
+        else:
+            assert isinstance(val, type), "non compound/solid tags must be of the same type as current workplane"
+            vals.append(val)
+
+    return vals
+
+def get_entities(register: dict[GeoEntityId, GeoEntityTransaction], cq_objects: Sequence):
+    entities = []
+    for cq_object in cq_objects:
+        if isinstance(cq_object, cq.occ_impl.shapes.Wire):
+            for edge in cq_object.Edges():
+                id = get_cq_object_id(edge)
+                entities.append(register[id])
+        else:
+            id = get_cq_object_id(cq_object)
+            entities.append(register[id])
+    return entities
+
+def get_selector(selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, index: int | None = None):
+    assert not (index is not None and selector is not None), "cannot use both index and selector"
+    if index is not None:
+        selector = AreaNthSelector(index)    
+    return selector
 
 class Geometry:
     def __init__(self) -> None:
@@ -95,6 +134,7 @@ class GeometryQL:
                 for surface in surface_loop.surfaces:
                     self.register[surface.id] = surface
                     for curve_loop in surface.curve_loops:
+                        # self.register[curve_loop.id] = curve_loop
                         for edge in curve_loop.edges:
                             self.register[edge.id] = edge
         
@@ -115,31 +155,47 @@ class GeometryQL:
     def reset(self):
         self.workplane = self.workplane._getTagged("root")
 
-    def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None):
+    def filterByTags(self, tags:Sequence[str]=[], remove=False):
+        cq_objects = self.workplane.vals()
+        
+        tagged_cq_objects = []
+        for tag in tags:
+            tagged_workspace = self.workplane._getTagged(tag)
+            tagged_cq_objects += get_cq_objects(tagged_workspace, type(cq_objects[0]))
+        tagged_cq_object_ids = [get_cq_object_id(tagged_cq_object) for tagged_cq_object in tagged_cq_objects] 
+
+        filtered_cq_objects = []
+        for cq_object in cq_objects:
+            id = get_cq_object_id(cq_object)
+            if (not remove and id in tagged_cq_object_ids) or (remove and id not in tagged_cq_object_ids):
+                filtered_cq_objects.append(cq_object)
+
+        self.workplane = self.workplane.newObject(filtered_cq_objects)
+        return self
+
+
+    def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, index: int | None = None):
+        selector = get_selector(selector, tag, index)
         self.workplane = self.workplane.faces(selector, tag)
         return self
     
-    def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None):
+    def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, index: int | None = None):
+        selector = get_selector(selector, tag, index)
         self.workplane = self.workplane.edges(selector, tag)
         return self
 
-    def wires(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None):
+    def wires(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, index: int | None = None):
+        selector = get_selector(selector, tag, index)
         self.workplane = self.workplane.wires(selector, tag)
         return self
 
-    def vertices(self, selector: Selector | str | None = None, tag: str | None = None):
+    def vertices(self, selector: Selector | str | None = None, tag: str | None = None, index: int | None = None):
+        selector = get_selector(selector, tag, index)
         self.workplane = self.workplane.vertices(selector, tag)
         return self
 
     def vals(self) -> Sequence[GeoEntityTransaction]:
-        entities = []
-        for cq_val_object in self.workplane.vals():
-            # accounting for Wire objects that have multiple edges in on object
-            cqobjects = (cq_val_object,)
-            for cqobject in cqobjects:
-                id = get_cq_object_id(cqobject)
-                entities.append(self.register[id])
-        return entities
+        return get_entities(self.register, self.workplane.vals())
 
     def tag(self, name: str):
         self.workplane = self.workplane.tag(name)
@@ -152,7 +208,7 @@ class GeometryQL:
 
     def addPhysicalGroup(self, name: str, tagWorkspace: bool = True):
         for entity in self.vals():
-            entity.label = name
+            entity.set_label(name)
         if tagWorkspace:
             self.tag(name)
         self.reset()

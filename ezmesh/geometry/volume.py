@@ -30,11 +30,13 @@ class Volume(GeoEntityTransaction):
         for surface_loop in self.surface_loops:
             surface_loop.after_sync(ctx)
         
-        for (label, edge_tags) in ctx.get_edge_physical_groups().items():
-            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
+        for (label, surface_tags) in ctx.get_physical_groups(DimType.CURVE).items():
+            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, surface_tags)
             gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
 
-        # physical_group_tag = gmsh.model.add_physical_group(DimType.VOLUME.value, [self.tag])
+        for (label, surface_tags) in ctx.get_physical_groups(DimType.SURFACE).items():
+            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.SURFACE.value, surface_tags)
+            gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, label)
 
 
     def get_edges(self):

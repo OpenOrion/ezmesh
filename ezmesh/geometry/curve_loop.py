@@ -4,7 +4,7 @@ from typing import Optional, Sequence, Union, cast
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
+from ezmesh.geometry.transaction import GeoEntityId, MeshContext, GeoEntityTransaction, format_coord_id
 from ezmesh.geometry.edge import Curve, Edge, Line
 from ezmesh.geometry.point import Point
 from ezmesh.utils.types import NumpyFloat
@@ -34,7 +34,12 @@ class CurveLoop(GeoEntityTransaction):
     "tag of the curve loop when passing by reference"
 
     def __post_init__(self):
-        self.type = DimType.CURVE
+        self.type = DimType.CURVE_LOOP
+
+    def set_label(self, label: str):
+        for edge in self.edges:
+            edge.set_label(label)
+        super().set_label(label)
 
     @property
     def edge_groups(self):
@@ -116,3 +121,7 @@ class CurveLoop(GeoEntityTransaction):
         curve_loop = CurveLoop(edges, tag=tag)
         return curve_loop
     
+    @property
+    def id(self) -> GeoEntityId:
+        vector_id = format_coord_id(np.average([edge.id[1] for edge in self.edges], axis=0))
+        return (self.type, vector_id)

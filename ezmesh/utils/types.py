@@ -10,3 +10,4 @@ class DimType(Enum):
     CURVE = 1
     SURFACE = 2
     VOLUME = 3
+    CURVE_LOOP = 10
