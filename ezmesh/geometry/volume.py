@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from typing import Optional, Sequence, cast
 import gmsh
+from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
@@ -44,6 +45,12 @@ class Volume(GeoEntityTransaction):
         for surface_loop in self.surface_loops:
             edges += surface_loop.get_edges()
         return edges
+
+    def get_surfaces(self):
+        surfaces: Sequence[PlaneSurface] = []
+        for surface_loop in self.surface_loops:
+            surfaces += surface_loop.surfaces
+        return surfaces
 
     @staticmethod
     def from_tag(tag: int, ctx: MeshContext):

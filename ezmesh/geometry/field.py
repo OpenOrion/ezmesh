@@ -1,16 +1,17 @@
 import gmsh
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Sequence, Union, cast
 from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.transaction import MeshContext, GeoTransaction
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.geometry.point import Point
+from ezmesh.geometry.volume import Volume
 from ezmesh.utils.geometry import PropertyType, get_property
 from ezmesh.utils.types import Number
 
 @dataclass
-class ExtrudeBoundaryLayer(GeoTransaction):
+class ExtrudedBoundaryLayer(GeoTransaction):
     targets: Sequence[Union[Edge, PlaneSurface]]
     "target to be added to the boundary layer"
 
@@ -23,26 +24,28 @@ class ExtrudeBoundaryLayer(GeoTransaction):
     ratio: float
     "size Ratio Between Two Successive Layers"
 
+    is_quad_mesh: bool = True
+    "generate recombined elements in the boundary layer"
+
     def __post_init__(self):
-        self.is_run = False
+        self.tag = None
         
     def before_sync(self, ctx: MeshContext):
+        if self.tag is None:
+            heights = [self.hwall_n]
+            for i in range(1, self.num_layers): 
+                heights.append(heights[-1] + heights[0] * self.ratio**i)
+            
+            dimTags = [(target.type.value, target.tag) for target in self.targets]
+            extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
 
-        heights = [self.hwall_n]
-        for i in range(1, self.num_layers): 
-            heights.append(heights[-1] + heights[0] * self.ratio**i)
-        
-        dimTags = [(target.type.value, target.tag) for target in self.targets]
-        extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
-
-        top = []
-        for i in range(1, len(extruded_bnd_layer)):
-            if extruded_bnd_layer[i][0] == 3:
-                top.append(extruded_bnd_layer[i-1])
-
-        bnd = gmsh.model.getBoundary(top)
-        cl2 = gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
-        
+            top = []
+            for i in range(1, len(extruded_bnd_layer)):
+                if extruded_bnd_layer[i][0] == 3:
+                    top.append(extruded_bnd_layer[i-1])
+            gmsh.model.geo.synchronize()
+            bnd = gmsh.model.getBoundary(top)
+            self.tag = gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
 
     def after_sync(self, ctx: MeshContext):
         ...
@@ -126,12 +129,13 @@ class TransfiniteCurveField(GeoTransaction):
     def after_sync(self, ctx: MeshContext):
         if not self.is_run:
             for i, edge in enumerate(self.edges):
-                gmsh.model.mesh.set_transfinite_curve(
+                gmsh.model.mesh.setTransfiniteCurve(
                     edge.tag,
                     numNodes=cast(Number, get_property(self.node_counts, i, edge.label))+1,
-                    meshType=get_property(self.mesh_types, i, edge.label, "Progression"),
-                    coef=get_property(self.coefs, i, edge.label, 1.0)
+                    # meshType=get_property(self.mesh_types, i, edge.label, "Progression"),
+                    # coef=get_property(self.coefs, i, edge.label, 1.0)
                 )
+
             self.is_run = True
 
 
@@ -140,10 +144,10 @@ class TransfiniteSurfaceField(GeoTransaction):
     """
     A plane surface with transfinite meshing. Normal plane if corners are not defined.
     """
-    surface: PlaneSurface
+    surfaces: Sequence[PlaneSurface]
     "surface to apply field"
 
-    corners: list[Point]
+    corners: list[Point] = field(default_factory=list)
     "corners of transfinite surface"
 
     arrangement: str = "Left"
@@ -157,23 +161,44 @@ class TransfiniteSurfaceField(GeoTransaction):
 
     def after_sync(self, ctx: MeshContext):      
         if not self.is_run:
-            corner_tags = [cast(int, corner.tag) for corner in self.corners]
-            gmsh.model.mesh.set_transfinite_surface(self.surface.tag, self.arrangement, corner_tags)
+            # corner_tags = [cast(int, corner.tag) for corner in self.corners]
+            for surface in self.surfaces:
+                gmsh.model.mesh.setTransfiniteSurface(surface.tag)
+            # self.arrangement, corner_tags
 
-    @staticmethod
-    def from_labels(surface: PlaneSurface, labels: tuple[str,str], curve_loop: Optional[CurveLoop] = None, arrangement: str = "Left"):
-        "create transfinite surface from edges"
+    # @staticmethod
+    # def from_labels(surface: PlaneSurface, labels: tuple[str,str], curve_loop: Optional[CurveLoop] = None, arrangement: str = "Left"):
+    #     "create transfinite surface from edges"
         
-        # use primary curve loop of surface if curve loop is not defined
-        if curve_loop is None:
-            curve_loop = surface.curve_loops[0]
+    #     # use primary curve loop of surface if curve loop is not defined
+    #     if curve_loop is None:
+    #         curve_loop = surface.curve_loops[0]
 
-        first_corner_group, second_corner_group = labels
-        corners = [
-            curve_loop.edge_groups[first_corner_group][0].start, 
-            curve_loop.edge_groups[first_corner_group][-1].end,
-            curve_loop.edge_groups[second_corner_group][0].start, 
-            curve_loop.edge_groups[second_corner_group][-1].end
-        ]
+    #     first_corner_group, second_corner_group = labels
+    #     corners = [
+    #         curve_loop.edge_groups[first_corner_group][0].start, 
+    #         curve_loop.edge_groups[first_corner_group][-1].end,
+    #         curve_loop.edge_groups[second_corner_group][0].start, 
+    #         curve_loop.edge_groups[second_corner_group][-1].end
+    #     ]
 
-        return TransfiniteSurfaceField(surface, corners, arrangement)
+    #     return TransfiniteSurfaceField(surface, corners, arrangement)
+
+@dataclass
+class TransfiniteVolumeField(GeoTransaction):
+    """
+    A plane surface with transfinite meshing. Normal plane if corners are not defined.
+    """
+    volumes: Sequence[Volume]
+    "surface to apply field"
+
+    def __post_init__(self):
+        self.is_run = False
+
+    def before_sync(self, ctx: MeshContext):
+        super().before_sync(ctx)
+
+    def after_sync(self, ctx: MeshContext):      
+        if not self.is_run:
+            for volume in self.volumes:
+                gmsh.model.mesh.setTransfiniteVolume(volume.tag)

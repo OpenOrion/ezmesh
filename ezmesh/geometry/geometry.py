@@ -6,9 +6,10 @@ import numpy as np
 from ezmesh.exporters import export_to_su2
 from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.plane_surface import PlaneSurface
+from ezmesh.geometry.point import Point
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.transaction import GeoEntityTransaction, GeoEntityId, GeoTransaction, MeshContext, format_coord_id
-from ezmesh.geometry.field import ExtrudeBoundaryLayer
+from ezmesh.geometry.field import ExtrudedBoundaryLayer, TransfiniteCurveField, TransfiniteSurfaceField, TransfiniteVolumeField
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume
 from ezmesh.mesh import Mesh
@@ -212,20 +213,41 @@ class GeometryQL:
         self.reset()
         return self
 
-    # def addTransfiniteCurveField(self, node_counts: PropertyType[int], mesh_types: Optional[PropertyType[str]] = None, coefs: Optional[PropertyType[float]] = None):
-    #     for entity in self.vals():
-    #         assert isinstance(entity, PlaneSurface), "field entity must be a PlaneSurface"
-    #         curve_field = TransfiniteCurveField(node_counts, mesh_types, coefs)
+    def addTransfinite(self, node_count: int):
+        for volume in cast(Sequence[Volume], self.vals()):
 
-    # def addTransfiniteSurfaceField(self):
-    #     for entity in self.vals():
-    #         assert isinstance(entity, PlaneSurface), "field entity must be a PlaneSurface"
-    #         edges = self.workplane.edges().vals()
-    #         surface_field = TransfiniteSurfaceField(points)
-    #         entity.add_field(surface_field)
+            edges = cast(Sequence[Edge], volume.get_edges())
+            surfaces = cast(Sequence[PlaneSurface], volume.get_surfaces())
+
+            curve_field = TransfiniteCurveField(edges, [node_count]*len(edges))
+            surface_field = TransfiniteSurfaceField(surfaces)
+            volume_field = TransfiniteVolumeField([volume])
+
+            self.transactions.append(curve_field)
+            self.transactions.append(surface_field)
+            self.transactions.append(volume_field)
+
+        self.reset()
+        return self
+
+    def setMeshSizes(self, mesh_size: Union[float, Callable[[Point], float]]):
+        for point in cast(Sequence[Point], self.vals()):
+            if isinstance(mesh_size, Callable):
+                mesh_size = mesh_size(point)
+            point.set_mesh_size(mesh_size)
+        self.reset()
+        return self
+
+    def addTransfiniteSurfaceField(self):
+        surfaces = cast(Sequence[PlaneSurface], self.vals())
+        surface_field = TransfiniteSurfaceField(surfaces)
+        self.transactions.append(surface_field)
+        return self
+
 
     def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
-        ext_bnd_layer = ExtrudeBoundaryLayer(self.vals(), num_layers, hwall_n, ratio)
+        target = cast(Sequence[Union[PlaneSurface, Edge]], self.vals())
+        ext_bnd_layer = ExtrudedBoundaryLayer(target, num_layers, hwall_n, ratio)
         self.transactions.append(ext_bnd_layer)
         self.reset()
         return self
@@ -235,8 +257,8 @@ class GeometryQL:
         self.reset()
         return mesh
 
-    def write(self, filename: str):
-        mesh = self.to_mesh()
+    def write(self, filename: str, dim: int = 3):
+        mesh = self.to_mesh(dim)
         if filename.endswith(".su2"):
             export_to_su2(mesh, filename)
         else:

@@ -14,7 +14,7 @@ class PlaneSurface(GeoEntityTransaction):
     label: Optional[str] = None
     "label for physical group surface"
 
-    is_quad_mesh: bool = False
+    is_quad_mesh: bool = True
     "if true, surface mesh is made of quadralateral cells, else triangular cells"
 
     tag: Optional[int] = None

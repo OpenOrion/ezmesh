@@ -31,6 +31,11 @@ class Point(GeoEntityTransaction):
         self.z = cast(Number, self.coord[2] if len(self.coord) == 3 else 0)
         self.coord = np.array([self.x, self.y, self.z], dtype=NumpyFloat)
 
+    def set_mesh_size(self, mesh_size: float):
+        self.mesh_size = mesh_size
+        if self.tag is not None:
+            gmsh.model.geo.mesh.setSize([(self.type.value, self.tag)], self.mesh_size)
+            
     def before_sync(self, ctx: MeshContext):
         pnt_key = format_coord_id(self.coord, round_by=None)
 
