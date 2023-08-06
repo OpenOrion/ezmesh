@@ -1,6 +1,6 @@
 import gmsh
 from dataclasses import dataclass
-from typing import Optional, Sequence, cast
+from typing import Optional, Sequence, Union, cast
 from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.transaction import MeshContext, GeoTransaction
@@ -8,6 +8,45 @@ from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.geometry.point import Point
 from ezmesh.utils.geometry import PropertyType, get_property
 from ezmesh.utils.types import Number
+
+@dataclass
+class ExtrudeBoundaryLayer(GeoTransaction):
+    targets: Sequence[Union[Edge, PlaneSurface]]
+    "target to be added to the boundary layer"
+
+    num_layers: int
+    "number of layers"
+
+    hwall_n: float
+    "mesh size normal to the the wall"
+
+    ratio: float
+    "size Ratio Between Two Successive Layers"
+
+    def __post_init__(self):
+        self.is_run = False
+        
+    def before_sync(self, ctx: MeshContext):
+
+        heights = [self.hwall_n]
+        for i in range(1, self.num_layers): 
+            heights.append(heights[-1] + heights[0] * self.ratio**i)
+        
+        dimTags = [(target.type.value, target.tag) for target in self.targets]
+        extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
+
+        top = []
+        for i in range(1, len(extruded_bnd_layer)):
+            if extruded_bnd_layer[i][0] == 3:
+                top.append(extruded_bnd_layer[i-1])
+
+        bnd = gmsh.model.getBoundary(top)
+        cl2 = gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
+        
+
+    def after_sync(self, ctx: MeshContext):
+        ...
+
 
 @dataclass
 class BoundaryLayerField(GeoTransaction):
@@ -36,43 +75,33 @@ class BoundaryLayerField(GeoTransaction):
     "generate recombined elements in the boundary layer"
 
     def __post_init__(self):
-        self.is_run = False
+        self.tag = None
 
     def before_sync(self, ctx: MeshContext):
         super().before_sync(ctx)
 
     def after_sync(self, ctx: MeshContext):
-        if not self.is_run:
+        if not self.tag:
+            self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
+            edge_tags = [edge.tag for edge in self.edges]
+            gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', edge_tags)
+            if self.aniso_max:
+                gmsh.model.mesh.field.setNumber(self.tag, "AnisoMax", self.aniso_max)
+            if self.intersect_metrics:
+                gmsh.model.mesh.field.setNumber(self.tag, "IntersectMetrics", self.intersect_metrics)
+            if self.is_quad_mesh:
+                gmsh.model.mesh.field.setNumber(self.tag, "Quads", int(self.is_quad_mesh))
+            if self.hfar:
+                gmsh.model.mesh.field.setNumber(self.tag, "hfar", self.hfar)
+            if self.hwall_n:
+                gmsh.model.mesh.field.setNumber(self.tag, "hwall_n", self.hwall_n)
+            if self.ratio:
+                gmsh.model.mesh.field.setNumber(self.tag, "ratio", self.ratio)
+            if self.thickness:
+                gmsh.model.mesh.field.setNumber(self.tag, "thickness", self.thickness)
 
+            gmsh.model.mesh.field.setAsBoundaryLayer(self.tag)
 
-            N = 10 # number of layers
-            r = 2 # ratio
-            d = [1.7e-5] # thickness of first layer
-            for i in range(1, N): 
-                d.append(d[-1] + d[0] * r**i)
-            extbl = gmsh.model.geo.extrudeBoundaryLayer(gmsh.model.getEntities(2), [1] * N, d, True)
-
-
-            # tag = gmsh.model.mesh.field.add('BoundaryLayer')
-            # edge_tags = [edge.tag for edge in self.edges]
-            # gmsh.model.mesh.field.setNumbers(tag, 'CurvesList', edge_tags)
-            # if self.aniso_max:
-            #     gmsh.model.mesh.field.setNumber(tag, "AnisoMax", self.aniso_max)
-            # if self.intersect_metrics:
-            #     gmsh.model.mesh.field.setNumber(tag, "IntersectMetrics", self.intersect_metrics)
-            # if self.is_quad_mesh:
-            #     gmsh.model.mesh.field.setNumber(tag, "Quads", int(self.is_quad_mesh))
-            # if self.hfar:
-            #     gmsh.model.mesh.field.setNumber(tag, "hfar", self.hfar)
-            # if self.hwall_n:
-            #     gmsh.model.mesh.field.setNumber(tag, "hwall_n", self.hwall_n)
-            # if self.ratio:
-            #     gmsh.model.mesh.field.setNumber(tag, "ratio", self.ratio)
-            # if self.thickness:
-            #     gmsh.model.mesh.field.setNumber(tag, "thickness", self.thickness)
-
-            gmsh.model.mesh.field.setAsBoundaryLayer(tag)
-            self.is_run = True
 
 @dataclass
 class TransfiniteCurveField(GeoTransaction):

@@ -8,7 +8,7 @@ from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.transaction import GeoEntityTransaction, GeoEntityId, GeoTransaction, MeshContext, format_coord_id
-from ezmesh.geometry.field import BoundaryLayerField
+from ezmesh.geometry.field import ExtrudeBoundaryLayer
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume
 from ezmesh.mesh import Mesh
@@ -109,7 +109,6 @@ class GeometryQL:
         self.workplane = cq.importers.importStep(target) if isinstance(target, str) else target
         self.file_path = target if isinstance(target, str) else "workplane.step"
         self.transactions = []
-        self.fields = []
         self.mesh: Optional[Mesh] = None
         self.ctx = MeshContext()
         self.register: dict[GeoEntityId, GeoEntityTransaction] = {}
@@ -128,7 +127,6 @@ class GeometryQL:
         self.ctx.update() 
         for (_, volume_tag) in gmsh.model.occ.getEntities(DimType.VOLUME.value):
             volume = Volume.from_tag(volume_tag, self.ctx)
-            self.transactions.append(volume)
             self.register[volume.id] = volume
             for surface_loop in volume.surface_loops:
                 for surface in surface_loop.surfaces:
@@ -226,15 +224,14 @@ class GeometryQL:
     #         surface_field = TransfiniteSurfaceField(points)
     #         entity.add_field(surface_field)
 
-    def addBoundaryLayerField(self, aniso_max: float | None = None, hfar: float | None = None, hwall_n: float | None = None, ratio: float | None = None, thickness: float | None = None, intersect_metrics: bool = False, is_quad_mesh: bool = False):
-        edges = cast(Sequence[Edge], self.vals()) 
-        field = BoundaryLayerField(edges, aniso_max, hfar, hwall_n, ratio, thickness, intersect_metrics, is_quad_mesh)
-        self.fields.append(field)
+    def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
+        ext_bnd_layer = ExtrudeBoundaryLayer(self.vals(), num_layers, hwall_n, ratio)
+        self.transactions.append(ext_bnd_layer)
         self.reset()
         return self
 
     def to_mesh(self, dim: int = 3):
-        mesh = generate_mesh(self.vals(), self.ctx, dim)
+        mesh = generate_mesh([*self.vals(), *self.transactions], self.ctx, dim)
         self.reset()
         return mesh
 
