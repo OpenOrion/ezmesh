@@ -1,4 +1,4 @@
-from typing import Callable, Literal, Optional, Sequence, Type, Union, cast
+from typing import Callable, Optional, Sequence, Type, Union, cast
 from cadquery.selectors import Selector
 import gmsh
 import cadquery as cq
@@ -13,9 +13,9 @@ from ezmesh.geometry.field import ExtrudedBoundaryLayer, TransfiniteCurveField, 
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume
 from ezmesh.mesh import Mesh
-from ezmesh.utils.geometry import PropertyType, generate_mesh, commit_transactions
+from ezmesh.utils.geometry import generate_mesh, commit_transactions
 from jupyter_cadquery import show
-from cadquery.selectors import AreaNthSelector
+from cadquery.selectors import AreaNthSelector, StringSyntaxSelector, InverseSelector
 
 def get_cq_object_id(cqobject):
     if isinstance(cqobject, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
@@ -67,10 +67,14 @@ def get_entities(register: dict[GeoEntityId, GeoEntityTransaction], cq_objects: 
             entities.append(register[id])
     return entities
 
-def get_selector(selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, index: int | None = None):
+def get_selector(selector: Union[Selector, str, None] = None, index: int | None = None):
     assert not (index is not None and selector is not None), "cannot use both index and selector"
+    
     if index is not None:
         selector = AreaNthSelector(index)    
+    elif isinstance(selector, str):
+        selector = StringSyntaxSelector(selector)
+
     return selector
 
 class Geometry:
@@ -108,6 +112,7 @@ class GeometryQL:
     def __init__(self, target: Union[cq.Workplane, str]) -> None:
         self.target = target
         self.workplane = cq.importers.importStep(target) if isinstance(target, str) else target
+        self.initial_workplane = self.workplane
         self.file_path = target if isinstance(target, str) else "workplane.step"
         self.transactions = []
         self.mesh: Optional[Mesh] = None
@@ -116,7 +121,6 @@ class GeometryQL:
         self.update()
 
     def update(self):
-        self.workplane.tag("root")
 
         gmsh.initialize()
         if not isinstance(self.target, str) and self.file_path.endswith(".step"):
@@ -152,21 +156,29 @@ class GeometryQL:
             self.workplane.newObject([cq_object]).tag(tag)
 
     def reset(self):
-        self.workplane = self.workplane._getTagged("root")
+        self.workplane = self.initial_workplane
 
-    def filterByTags(self, tags:Sequence[str]=[], remove=False):
+    def filter(self, selector: Union[Selector, str, None] = None, tags:Union[Sequence[str], str, None]= None, inverse=False):
+        tags = [tags ]if isinstance(tags, str) else tags or []
         cq_objects = self.workplane.vals()
-        
+        filtered_cq_objects = []
+
+        selector = get_selector(selector)
+        if inverse and selector:
+            selector = InverseSelector(selector)
+            cq_objects = selector.filter(cq_objects)
+        elif not inverse and selector:
+            filtered_cq_objects += selector.filter(cq_objects)
+
         tagged_cq_objects = []
         for tag in tags:
             tagged_workspace = self.workplane._getTagged(tag)
             tagged_cq_objects += get_cq_objects(tagged_workspace, type(cq_objects[0]))
         tagged_cq_object_ids = [get_cq_object_id(tagged_cq_object) for tagged_cq_object in tagged_cq_objects] 
 
-        filtered_cq_objects = []
         for cq_object in cq_objects:
             id = get_cq_object_id(cq_object)
-            if (not remove and id in tagged_cq_object_ids) or (remove and id not in tagged_cq_object_ids):
+            if (not inverse and id in tagged_cq_object_ids) or (inverse and id not in tagged_cq_object_ids):
                 filtered_cq_objects.append(cq_object)
 
         self.workplane = self.workplane.newObject(filtered_cq_objects)
@@ -174,22 +186,22 @@ class GeometryQL:
 
 
     def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, index: int | None = None):
-        selector = get_selector(selector, tag, index)
+        selector = get_selector(selector, index)
         self.workplane = self.workplane.faces(selector, tag)
         return self
     
     def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, index: int | None = None):
-        selector = get_selector(selector, tag, index)
+        selector = get_selector(selector, index)
         self.workplane = self.workplane.edges(selector, tag)
         return self
 
     def wires(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, index: int | None = None):
-        selector = get_selector(selector, tag, index)
+        selector = get_selector(selector, index)
         self.workplane = self.workplane.wires(selector, tag)
         return self
 
     def vertices(self, selector: Selector | str | None = None, tag: str | None = None, index: int | None = None):
-        selector = get_selector(selector, tag, index)
+        selector = get_selector(selector, index)
         self.workplane = self.workplane.vertices(selector, tag)
         return self
 
@@ -213,20 +225,29 @@ class GeometryQL:
         self.reset()
         return self
 
-    def addTransfinite(self, node_count: int):
+    def addTransfiniteVolume(self):
         for volume in cast(Sequence[Volume], self.vals()):
-
-            edges = cast(Sequence[Edge], volume.get_edges())
-            surfaces = cast(Sequence[PlaneSurface], volume.get_surfaces())
-
-            curve_field = TransfiniteCurveField(edges, [node_count]*len(edges))
-            surface_field = TransfiniteSurfaceField(surfaces)
             volume_field = TransfiniteVolumeField([volume])
+            self.transactions.append(volume_field)
+        self.reset()
+        return self
 
+    def addTransfiniteSurface(self, node_count: int, point_select: Callable[[cq.Workplane], cq.Workplane]):
+        surfaces = cast(Sequence[PlaneSurface], self.vals())
+        for surface in surfaces:
+            edges = surface.get_edges()
+            curve_field = TransfiniteCurveField(edges, [node_count]*len(edges))
+            points = get_entities(self.register, point_select(self.workplane).vals())
+            surface_field = TransfiniteSurfaceField(surface, points)
             self.transactions.append(curve_field)
             self.transactions.append(surface_field)
-            self.transactions.append(volume_field)
+        self.reset()
+        return self
+    
 
+    def setSurfaceQuads(self, quads: bool = True):
+        for surface in cast(Sequence[PlaneSurface], self.vals()):
+            surface.set_quad(quads)
         self.reset()
         return self
 

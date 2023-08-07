@@ -6,6 +6,27 @@ from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
 from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
 
+
+# def sortEdges(lines: list[Edge]):
+#     sorted_lines = [lines[0]]
+#     lines = lines[1:]
+#     while lines:
+#         for i, line in enumerate(lines):
+#             if (line.start.coord == sorted_lines[-1].end.coord).all():
+#                 sorted_lines.append(line)
+#                 lines.pop(i)
+#                 break
+#             elif (line.end.coord == sorted_lines[-1].end.coord).all():
+#                 line.reverse()
+#                 sorted_lines.append(line)
+#                 lines.pop(i)
+#                 break
+#         else:
+#             sorted_lines.append(line)
+
+#             lines.pop(0)
+#     return sorted_lines
+
 @dataclass
 class PlaneSurface(GeoEntityTransaction):
     curve_loops: Sequence[CurveLoop]
@@ -14,7 +35,7 @@ class PlaneSurface(GeoEntityTransaction):
     label: Optional[str] = None
     "label for physical group surface"
 
-    is_quad_mesh: bool = True
+    is_quad_mesh: bool = False
     "if true, surface mesh is made of quadralateral cells, else triangular cells"
 
     tag: Optional[int] = None
@@ -22,6 +43,9 @@ class PlaneSurface(GeoEntityTransaction):
 
     def __post_init__(self):
         self.type = DimType.SURFACE
+
+    def set_quad(self, is_quad_mesh: bool):
+        self.is_quad_mesh = is_quad_mesh
 
     def before_sync(self, ctx: MeshContext):
         curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]

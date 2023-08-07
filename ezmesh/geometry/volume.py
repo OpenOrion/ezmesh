@@ -30,7 +30,7 @@ class Volume(GeoEntityTransaction):
     def after_sync(self, ctx: MeshContext):
         for surface_loop in self.surface_loops:
             surface_loop.after_sync(ctx)
-        
+
         for (label, surface_tags) in ctx.get_physical_groups(DimType.CURVE).items():
             physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, surface_tags)
             gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)

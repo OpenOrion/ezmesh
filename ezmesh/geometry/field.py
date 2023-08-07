@@ -144,7 +144,7 @@ class TransfiniteSurfaceField(GeoTransaction):
     """
     A plane surface with transfinite meshing. Normal plane if corners are not defined.
     """
-    surfaces: Sequence[PlaneSurface]
+    surfaces: Union[PlaneSurface, Sequence[PlaneSurface]]
     "surface to apply field"
 
     corners: list[Point] = field(default_factory=list)
@@ -154,6 +154,7 @@ class TransfiniteSurfaceField(GeoTransaction):
     "arrangement of transfinite surface"
 
     def __post_init__(self):
+        self.surfaces = [self.surfaces] if isinstance(self.surfaces, PlaneSurface) else self.surfaces
         self.is_run = False
 
     def before_sync(self, ctx: MeshContext):
@@ -161,10 +162,9 @@ class TransfiniteSurfaceField(GeoTransaction):
 
     def after_sync(self, ctx: MeshContext):      
         if not self.is_run:
-            # corner_tags = [cast(int, corner.tag) for corner in self.corners]
-            for surface in self.surfaces:
-                gmsh.model.mesh.setTransfiniteSurface(surface.tag)
-            # self.arrangement, corner_tags
+            corner_tags = [cast(int, corner.tag) for corner in self.corners]
+            for surface in cast(Sequence[PlaneSurface], self.surfaces):
+                gmsh.model.mesh.setTransfiniteSurface(surface.tag, self.arrangement, corner_tags)
 
     # @staticmethod
     # def from_labels(surface: PlaneSurface, labels: tuple[str,str], curve_loop: Optional[CurveLoop] = None, arrangement: str = "Left"):
@@ -189,16 +189,17 @@ class TransfiniteVolumeField(GeoTransaction):
     """
     A plane surface with transfinite meshing. Normal plane if corners are not defined.
     """
-    volumes: Sequence[Volume]
+    volumes: Union[Volume, Sequence[Volume]]
     "surface to apply field"
 
     def __post_init__(self):
         self.is_run = False
+        self.volumes = [self.volumes] if isinstance(self.volumes, Volume) else self.volumes
 
     def before_sync(self, ctx: MeshContext):
         super().before_sync(ctx)
 
     def after_sync(self, ctx: MeshContext):      
         if not self.is_run:
-            for volume in self.volumes:
+            for volume in cast(Sequence[Volume], self.volumes):
                 gmsh.model.mesh.setTransfiniteVolume(volume.tag)

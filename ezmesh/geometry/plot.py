@@ -20,27 +20,78 @@ def plot_entities(
         layout=go.Layout(title=go.layout.Title(text=title))
     )
     
-    exterior_coords: list[tuple[Optional[str], npt.NDArray[NumpyFloat]]] = []
+    # exterior_coords: list[tuple[Optional[str], npt.NDArray[NumpyFloat]]] = []
+
+    surface_coord_groups: dict[str, list[np.ndarray]] = {}
+    edge_coord_groups: dict[str, list[np.ndarray]] = {}
+
 
     for entity in entities:
-        if isinstance(entities[0], (Volume, PlaneSurface, CurveLoop)):
-            exterior_coords += [(edge.label, edge.get_coords(samples_per_spline)) for edge in cast(Union[Volume, PlaneSurface, CurveLoop], entity).get_edges()]
-        elif isinstance(entities[0], Edge):
-            exterior_coords += [(edge.label, edge.get_coords(samples_per_spline)) for edge in cast(Sequence[Edge], entities)]
-        elif isinstance(entities[0], Point):
-            exterior_coords += [(point.label, np.array([point.coord])) for point in cast(Sequence[Point], entities)] # type: ignore
+        if isinstance(entity, (Volume, PlaneSurface)):
+            surfaces = entity.get_surfaces() if isinstance(entity, Volume) else [entity]
+            for surface in surfaces:
+                surface_label = surface.label or f"Surface{surface.tag}"
+                if surface.tag not in surface_coord_groups:
+                    surface_coord_groups[surface_label] = []
+                
+                face_edge_coords: list[np.ndarray] = []
+                for edge in surface.get_edges():
+                    edge_label = edge.label or f"Edge{edge.tag}"
+                    edge_coords = edge.get_coords(samples_per_spline)
+                    if edge.tag not in edge_coord_groups:
+                        edge_coord_groups[edge_label] = []
+                    edge_coord_groups[edge_label].append(edge_coords)
+                    face_edge_coords.append(edge_coords)
+
+                surface_coord_groups[surface_label].append(face_edge_coords)
+            
+        elif isinstance(entity, Edge):
+            edge_coords = entity.get_coords(samples_per_spline)
+            edge_label = entity.label or f"Edge{entity.tag}"
+            edge_coord_groups[edge_label].append(edge_coords)
+
         else:
             raise ValueError(f"Unknown entity type: {type(entities[0])}")
 
-    for label, exterior_coord in exterior_coords:
-        fig.add_scatter(
-            x=exterior_coord[:,0],
-            y=exterior_coord[:,1],
-            # z=exterior_coord[:,2],
-            name=label,
-            # legendgroup=label,
-            fill="toself"
-        )
+    scatter_groups: dict[str, list[np.ndarray]] = {}
+
+    surface_num = 0
+    for label, surface_coord_group in surface_coord_groups.items():
+        for exterior_coords in surface_coord_group:
+            for exterior_coord in exterior_coords:
+                fig.add_scatter3d(
+                    x=exterior_coord[:,0],
+                    y=exterior_coord[:,1],
+                    z=exterior_coord[:,2],
+                    name=label or f"Surface{surface_num}",
+                )
+            surface_num += 1
+
+    # for label, exterior_coord in exterior_coords:
+    #     if not label:
+    #         continue
+    #     if label not in scatter_groups:
+    #         scatter_groups[label] = []
+    #     scatter_groups[label].append(exterior_coord)
+
+    # for label, exterior_coord_group in scatter_groups.items():
+    #     exterior_coord_group = np.array(exterior_coord_group)
+    #     if exterior_coord_group.shape[1] == 2:
+    #         fig.add_scatter(
+    #             x=exterior_coord_group[:,0],
+    #             y=exterior_coord_group[:,1],
+    #             name=label,
+    #             fill="toself"
+    #         )
+    #     else:
+
+    #         fig.add_scatter3d(
+    #             x=exterior_coord_group[:,0],
+    #             y=exterior_coord_group[:,1],
+    #             z=exterior_coord_group[:,2],
+    #             name=label,
+    #             fill="toself"
+    #         )
 
 
     fig.layout.yaxis.scaleanchor = "x"  # type: ignore
