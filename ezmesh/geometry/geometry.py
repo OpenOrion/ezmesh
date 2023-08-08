@@ -290,9 +290,9 @@ class GeometryQL:
         show(self.workplane)
         return self
 
-    def plot(self):
+    def plot(self, include_surfaces=True, include_edges=True, include_points=False, title: str = "Plot", samples_per_spline: int = 20, ):
         entities = self.vals()
-        plot_entities(entities)
+        plot_entities(entities, include_surfaces, include_edges, include_points, title, samples_per_spline)
         return self
 
     def close(self):

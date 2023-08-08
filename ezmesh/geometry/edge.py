@@ -10,6 +10,9 @@ from ezmesh.geometry.point import Point
 from ezmesh.utils.geometry import get_sampling
 from ezmesh.utils.types import NumpyFloat
 
+def unit_vector(vector: npt.NDArray[NumpyFloat]) -> npt.NDArray[NumpyFloat]:
+    """ Returns the unit vector of the vector.  """
+    return vector / np.linalg.norm(vector)
 
 class Edge(GeoEntityTransaction):
     start: Point
@@ -21,7 +24,7 @@ class Edge(GeoEntityTransaction):
     def __init__(self):
         self.label = None
         self.type = DimType.CURVE
-
+    
     def before_sync(self, ctx: MeshContext):
         ctx.add_edge(self)
 
@@ -30,11 +33,18 @@ class Edge(GeoEntityTransaction):
 
     def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False) -> npt.NDArray[NumpyFloat]:
         assert self.tag is not None, "Edge must be synced before getting coordinates"
-        bounds = gmsh.model.getParametrizationBounds(1, self.tag)
+        bounds = gmsh.model.getParametrizationBounds(DimType.CURVE.value, self.tag)
         sampling = get_sampling(bounds[0][0], bounds[1][0], num_pnts, is_cosine_sampling)
-        coords_concatted = gmsh.model.getValue(1, self.tag, sampling)
-        return np.array(coords_concatted, dtype=NumpyFloat).reshape((-1, 3))
-    
+        coords_concatted = gmsh.model.getValue(DimType.CURVE.value, self.tag, sampling)
+        coords = np.array(coords_concatted, dtype=NumpyFloat).reshape((-1, 3))
+
+        is_line = np.all(unit_vector(coords[0] - coords[-1]) == unit_vector(coords[0] - np.median(coords, axis=0)))
+
+        if is_line:
+            return np.array([coords[0], coords[-1]])
+        return coords
+
+
     @staticmethod
     def from_tag(tag: int, ctx: MeshContext):
         if tag in ctx.edges:
@@ -65,7 +75,7 @@ class Line(Edge):
         super().before_sync(ctx)   
         return self.tag
 
-    def get_coords(self, num_pnts: int = 2):
+    def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
         return np.array([self.start.coord, self.end.coord])
 
 @dataclass

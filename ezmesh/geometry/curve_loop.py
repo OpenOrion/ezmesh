@@ -12,6 +12,29 @@ from ezmesh.utils.geometry import get_group_name
 
 GroupType = Union[npt.NDArray[NumpyFloat], tuple[str, npt.NDArray[NumpyFloat]]]
 
+def getSortedEdgeCoords(lines: Sequence[Union[Edge, npt.NDArray[NumpyFloat]]], num_pnts: int = 20, is_cosine_sampling: bool = False):
+    sorted_lines = [lines[0].get_coords(num_pnts, is_cosine_sampling) if isinstance(lines[0], Edge) else lines[0]]
+    lines = list(lines[1:])
+    while lines:
+        for i, line in enumerate(lines):
+            line_start_coord = line.start.coord if isinstance(line, Edge) else line[0]
+            line_end_coord = line.end.coord if isinstance(line, Edge) else line[-1]
+            line_coords = line.get_coords(num_pnts, is_cosine_sampling) if isinstance(line, Edge) else line
+            if (line_start_coord == sorted_lines[-1][-1]).all():
+                sorted_lines.append(line_coords)
+                lines.pop(i)
+                break
+            elif (line_end_coord == sorted_lines[-1][-1]).all():
+                sorted_lines.append(line_coords[::-1])
+                lines.pop(i)
+                break
+        else:
+            lines.pop(0)
+            # raise ValueError("Cannot sort lines")
+
+    return sorted_lines
+
+
 def get_lines(coords: npt.NDArray[NumpyFloat], mesh_size: float, labels: Union[str, list[str], None] = None):
     return [
         Line(
@@ -114,6 +137,10 @@ class CurveLoop(GeoEntityTransaction):
     
     def get_edges(self):
         return self.edges
+
+    def get_coords(self, num_pnts: int = 10, is_cosine_sampling: bool = False):
+        return np.concatenate(getSortedEdgeCoords(self.edges, num_pnts, is_cosine_sampling))
+
 
     @staticmethod
     def from_tag(tag: int, edge_tags: Sequence[int], ctx: MeshContext):

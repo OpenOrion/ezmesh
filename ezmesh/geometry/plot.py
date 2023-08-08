@@ -10,21 +10,40 @@ import numpy.typing as npt
 import numpy as np
 from ezmesh.utils.types import NumpyFloat
 
+
+def add_plot(fig: go.Figure, coords: npt.NDArray[NumpyFloat], label: str, include_points: bool, dim: int):
+    if dim == 3:
+        fig.add_scatter3d(
+            x=coords[:,0],
+            y=coords[:,1],
+            z=coords[:,2],
+            name=label,
+            mode="lines" if not include_points else None,                
+        )
+    else:
+        fig.add_scatter(
+            x=coords[:,0],
+            y=coords[:,1],
+            name=label,
+            fill="toself",
+            mode="lines" if not include_points else None,
+        )
+
+
 def plot_entities(
     entities: Union[GeoEntityTransaction, Sequence[GeoEntityTransaction]], 
-    title: str = "Surface", 
+    include_surfaces=True, 
+    include_edges=True,
+    include_points=False,
+    title: str = "Plot", 
     samples_per_spline: int = 20, 
 ):
     entities = entities if isinstance(entities, Sequence) else [entities]
     fig = go.Figure(
         layout=go.Layout(title=go.layout.Title(text=title))
     )
-    
-    # exterior_coords: list[tuple[Optional[str], npt.NDArray[NumpyFloat]]] = []
-
     surface_coord_groups: dict[str, list[np.ndarray]] = {}
     edge_coord_groups: dict[str, list[np.ndarray]] = {}
-
 
     for entity in entities:
         if isinstance(entity, (Volume, PlaneSurface)):
@@ -33,65 +52,39 @@ def plot_entities(
                 surface_label = surface.label or f"Surface{surface.tag}"
                 if surface.tag not in surface_coord_groups:
                     surface_coord_groups[surface_label] = []
+                surface_coord_groups[surface_label] += surface.get_coords(samples_per_spline)
                 
-                face_edge_coords: list[np.ndarray] = []
-                for edge in surface.get_edges():
-                    edge_label = edge.label or f"Edge{edge.tag}"
-                    edge_coords = edge.get_coords(samples_per_spline)
-                    if edge.tag not in edge_coord_groups:
-                        edge_coord_groups[edge_label] = []
-                    edge_coord_groups[edge_label].append(edge_coords)
-                    face_edge_coords.append(edge_coords)
+                for curve_loop in surface.curve_loops:
+                    curve_loop_label = curve_loop.label or f"CurveLoop{curve_loop.tag}"
+                    if curve_loop.tag not in edge_coord_groups:
+                        edge_coord_groups[curve_loop_label] = []
 
-                surface_coord_groups[surface_label].append(face_edge_coords)
-            
+                    edge_coords = curve_loop.get_coords(samples_per_spline)
+                    edge_coord_groups[curve_loop_label].append(edge_coords)
+
         elif isinstance(entity, Edge):
-            edge_coords = entity.get_coords(samples_per_spline)
             edge_label = entity.label or f"Edge{entity.tag}"
-            edge_coord_groups[edge_label].append(edge_coords)
+            if entity.tag not in edge_coord_groups:
+                edge_coord_groups[edge_label] = []
 
+            edge_coords = entity.get_coords(samples_per_spline)
+            edge_coord_groups[edge_label].append(edge_coords)
         else:
             raise ValueError(f"Unknown entity type: {type(entities[0])}")
 
-    scatter_groups: dict[str, list[np.ndarray]] = {}
 
-    surface_num = 0
-    for label, surface_coord_group in surface_coord_groups.items():
-        for exterior_coords in surface_coord_group:
-            for exterior_coord in exterior_coords:
-                fig.add_scatter3d(
-                    x=exterior_coord[:,0],
-                    y=exterior_coord[:,1],
-                    z=exterior_coord[:,2],
-                    name=label or f"Surface{surface_num}",
-                )
-            surface_num += 1
+    if include_surfaces:
+        for label, coord_group in surface_coord_groups.items():
+            for surface_coords in coord_group:
+                dim = 3 if np.all(surface_coords[:,2]) else 2
+                if dim == 3:
+                    add_plot(fig, surface_coords, label, include_points, dim)
 
-    # for label, exterior_coord in exterior_coords:
-    #     if not label:
-    #         continue
-    #     if label not in scatter_groups:
-    #         scatter_groups[label] = []
-    #     scatter_groups[label].append(exterior_coord)
-
-    # for label, exterior_coord_group in scatter_groups.items():
-    #     exterior_coord_group = np.array(exterior_coord_group)
-    #     if exterior_coord_group.shape[1] == 2:
-    #         fig.add_scatter(
-    #             x=exterior_coord_group[:,0],
-    #             y=exterior_coord_group[:,1],
-    #             name=label,
-    #             fill="toself"
-    #         )
-    #     else:
-
-    #         fig.add_scatter3d(
-    #             x=exterior_coord_group[:,0],
-    #             y=exterior_coord_group[:,1],
-    #             z=exterior_coord_group[:,2],
-    #             name=label,
-    #             fill="toself"
-    #         )
+    if include_edges:
+        for label, coord_group in edge_coord_groups.items():
+            edge_coords = np.array(coord_group if len(coord_group) > 1 else coord_group[0], dtype=NumpyFloat)
+            dim = 3 if np.all(edge_coords[:,2]) else 2
+            add_plot(fig, edge_coords, label, include_points, dim)
 
 
     fig.layout.yaxis.scaleanchor = "x"  # type: ignore

@@ -11,6 +11,15 @@ def format_coord_id(iterable: Iterable[Number], round_by: Optional[int] = 5):
 GeoEntityId = tuple[DimType, tuple[float, float, float]]
 
 
+def get_unique_edges(lst):
+    unique_entries = set()
+
+    for entry in lst:
+        sorted_entry = tuple(sorted(entry))
+        unique_entries.add(sorted_entry)
+
+    return np.array([list(entry) for entry in unique_entries])
+
 class MeshContext:
     point_tags: dict[tuple[Number, Number, Number], int]
     points: dict[int, "GeoEntityTransaction"]
@@ -23,7 +32,8 @@ class MeshContext:
         self.points = {}
         self.edges = {}
         self.surfaces = {}
-       
+        # self.edge_node_tags = {}
+
     def add_surface(self, surface):
         self.surfaces[surface.tag] = surface
 
@@ -53,6 +63,7 @@ class MeshContext:
         return physical_groups
 
     def update(self):
+        nodes_before_mesh =  gmsh.model.mesh.getNodes()
         gmsh.model.mesh.generate(1)
 
         node_tags, node_concatted, _ = gmsh.model.mesh.getNodes()
@@ -61,6 +72,7 @@ class MeshContext:
         from ezmesh.geometry.point import Point
         for i, point_coord in enumerate(node_coords):
             self.add_point(Point(point_coord, tag=node_tags[i]))
+
 
 
 

@@ -1,31 +1,12 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional, Sequence, cast
+
+import numpy as np
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
-from ezmesh.geometry.curve_loop import CurveLoop
+from ezmesh.geometry.curve_loop import CurveLoop, getSortedEdgeCoords
 from ezmesh.geometry.edge import Edge
-
-
-# def sortEdges(lines: list[Edge]):
-#     sorted_lines = [lines[0]]
-#     lines = lines[1:]
-#     while lines:
-#         for i, line in enumerate(lines):
-#             if (line.start.coord == sorted_lines[-1].end.coord).all():
-#                 sorted_lines.append(line)
-#                 lines.pop(i)
-#                 break
-#             elif (line.end.coord == sorted_lines[-1].end.coord).all():
-#                 line.reverse()
-#                 sorted_lines.append(line)
-#                 lines.pop(i)
-#                 break
-#         else:
-#             sorted_lines.append(line)
-
-#             lines.pop(0)
-#     return sorted_lines
 
 @dataclass
 class PlaneSurface(GeoEntityTransaction):
@@ -70,6 +51,10 @@ class PlaneSurface(GeoEntityTransaction):
             physical_group_tag = gmsh.model.add_physical_group(DimType.SURFACE.value, [self.tag])
             if self.label is not None:
                 gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, self.label)
+
+    def get_coords(self, num_pnts: int = 10, is_cosine_sampling: bool = False):
+        for curve_loop in self.curve_loops:
+            yield curve_loop.get_coords(num_pnts, is_cosine_sampling)
 
 
     def get_edges(self):
