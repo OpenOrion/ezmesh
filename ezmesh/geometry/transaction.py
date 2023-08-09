@@ -22,6 +22,7 @@ def get_unique_edges(lst):
 
 class MeshContext:
     point_tags: dict[tuple[Number, Number, Number], int]
+    edge_tags: dict[tuple[int, int], int]
     points: dict[int, "GeoEntityTransaction"]
     edges: dict[int, "GeoEntityTransaction"]
     surfaces: dict[int, "GeoEntityTransaction"]
@@ -29,6 +30,8 @@ class MeshContext:
     def __init__(self, dimension: int = 3) -> None:
         self.dimension = dimension
         self.point_tags = {}
+        self.edge_tags = {}
+
         self.points = {}
         self.edges = {}
         self.surfaces = {}
@@ -39,6 +42,7 @@ class MeshContext:
 
     def add_edge(self, edge):
         self.edges[edge.tag] = edge
+        self.edge_tags[(edge.start.tag, edge.end.tag)] = edge.tag
 
     def add_point(self, point):
         self.point_tags[format_coord_id(point.coord, round_by=None)] = point.tag

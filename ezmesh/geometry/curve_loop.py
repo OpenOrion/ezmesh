@@ -12,27 +12,47 @@ from ezmesh.utils.geometry import get_group_name
 
 GroupType = Union[npt.NDArray[NumpyFloat], tuple[str, npt.NDArray[NumpyFloat]]]
 
-def getSortedEdgeCoords(lines: Sequence[Union[Edge, npt.NDArray[NumpyFloat]]], num_pnts: int = 20, is_cosine_sampling: bool = False):
-    sorted_lines = [lines[0].get_coords(num_pnts, is_cosine_sampling) if isinstance(lines[0], Edge) else lines[0]]
-    lines = list(lines[1:])
-    while lines:
-        for i, line in enumerate(lines):
-            line_start_coord = line.start.coord if isinstance(line, Edge) else line[0]
-            line_end_coord = line.end.coord if isinstance(line, Edge) else line[-1]
-            line_coords = line.get_coords(num_pnts, is_cosine_sampling) if isinstance(line, Edge) else line
-            if (line_start_coord == sorted_lines[-1][-1]).all():
-                sorted_lines.append(line_coords)
-                lines.pop(i)
+@dataclass
+class DirectedPath:
+    edge: Edge
+    "Edge of the path"
+
+    direction: int = 1
+    "Direction of the path. 1 for forward, -1 for backward"
+
+    @property
+    def end(self):
+        return self.edge.end if self.direction == 1 else self.edge.start
+
+    @property
+    def start(self):
+        return self.edge.start if self.direction == 1 else self.edge.end
+
+bad_edges = []
+
+def get_sorted_paths(edges: Sequence[Edge]):
+    sorted_paths = [DirectedPath(edges[0], 1)]
+    edges = list(edges[1:])
+    while edges:
+        for i, edge in enumerate(edges):
+            if np.all(edge.start.coord == sorted_paths[-1].end.coord):
+                directed_path = DirectedPath(edge, 1)
+                sorted_paths.append(directed_path)
+                edges.pop(i)
                 break
-            elif (line_end_coord == sorted_lines[-1][-1]).all():
-                sorted_lines.append(line_coords[::-1])
-                lines.pop(i)
+            elif np.all(edge.end.coord == sorted_paths[-1].end.coord):
+                directed_path = DirectedPath(edge, -1)
+                sorted_paths.append(directed_path)
+                edges.pop(i)
+                break
+            elif np.all(edge.start.coord == sorted_paths[0].start.coord):
+                directed_path = DirectedPath(edge, -1)
+                sorted_paths.insert(0, directed_path)
+                edges.pop(i)
                 break
         else:
-            lines.pop(0)
-            # raise ValueError("Cannot sort lines")
-
-    return sorted_lines
+            raise ValueError("Edges do not form a closed loop")
+    return sorted_paths
 
 
 def get_lines(coords: npt.NDArray[NumpyFloat], mesh_size: float, labels: Union[str, list[str], None] = None):
@@ -58,6 +78,7 @@ class CurveLoop(GeoEntityTransaction):
 
     def __post_init__(self):
         self.type = DimType.CURVE_LOOP
+    
 
     def set_label(self, label: str):
         for edge in self.edges:
@@ -75,22 +96,21 @@ class CurveLoop(GeoEntityTransaction):
                 edge_groups[name].append(edge)
         return edge_groups
 
+    @property
+    def sorted_paths(self):
+        return get_sorted_paths(self.edges)
+
     def before_sync(self, ctx: MeshContext):
-        edge_tags = [edge.before_sync(ctx) for edge in self.edges]
+        edge_tags = [
+            sorted_path.direction*cast(int, sorted_path.edge.before_sync(ctx)) 
+            for sorted_path in self.sorted_paths
+        ]
         self.tag = self.tag or gmsh.model.geo.add_curve_loop(edge_tags)
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
         for edge in self.edges:
             edge.after_sync(ctx)        
-
-    def get_exterior_coords(self, num_pnts: int):
-        coords = [
-            edge.get_coords(num_pnts)
-            for edge in self.edges
-        ]
-        return np.concatenate(coords)
-
 
     @staticmethod
     def from_coords(
@@ -138,9 +158,14 @@ class CurveLoop(GeoEntityTransaction):
     def get_edges(self):
         return self.edges
 
-    def get_coords(self, num_pnts: int = 10, is_cosine_sampling: bool = False):
-        return np.concatenate(getSortedEdgeCoords(self.edges, num_pnts, is_cosine_sampling))
-
+    def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
+        coord_groups = []
+        for sorted_path in self.sorted_paths:
+            coord_group = sorted_path.edge.get_coords(num_pnts, is_cosine_sampling)
+            if sorted_path.direction == -1:
+                coord_group = coord_group[::-1]
+            coord_groups.append(coord_group)
+        return np.concatenate(coord_groups)
 
     @staticmethod
     def from_tag(tag: int, edge_tags: Sequence[int], ctx: MeshContext):

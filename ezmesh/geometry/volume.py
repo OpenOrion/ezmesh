@@ -24,7 +24,7 @@ class Volume(GeoEntityTransaction):
 
     def before_sync(self, ctx: MeshContext):
         surface_loop_tags = [surface_loop.before_sync(ctx) for surface_loop in self.surface_loops]
-        self.tag = self.tag or gmsh.model.geo.add_volume(surface_loop_tags)
+        self.tag = self.tag or gmsh.model.geo.addVolume(surface_loop_tags)
         return self.tag
 
     def after_sync(self, ctx: MeshContext):

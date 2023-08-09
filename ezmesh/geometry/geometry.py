@@ -1,81 +1,21 @@
-from typing import Callable, Optional, Sequence, Type, Union, cast
+from typing import Callable, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
 import gmsh
 import cadquery as cq
-import numpy as np
 from ezmesh.exporters import export_to_su2
 from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.geometry.point import Point
+from ezmesh.utils.cadquery import get_cq_object_id, get_cq_objects, get_entities, get_selector
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import GeoEntityTransaction, GeoEntityId, GeoTransaction, MeshContext, format_coord_id
+from ezmesh.geometry.transaction import GeoEntityTransaction, GeoEntityId, GeoTransaction, MeshContext
 from ezmesh.geometry.field import ExtrudedBoundaryLayer, TransfiniteCurveField, TransfiniteSurfaceField, TransfiniteVolumeField
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume
 from ezmesh.mesh import Mesh
 from ezmesh.utils.geometry import generate_mesh, commit_transactions
 from jupyter_cadquery import show
-from cadquery.selectors import AreaNthSelector, StringSyntaxSelector, InverseSelector
-
-def get_cq_object_id(cqobject):
-    if isinstance(cqobject, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
-        type = DimType.VOLUME
-    elif isinstance(cqobject, cq.occ_impl.shapes.Face):
-        type = DimType.SURFACE
-    elif isinstance(cqobject, cq.occ_impl.shapes.Wire):
-        type = DimType.CURVE_LOOP
-    elif isinstance(cqobject, cq.occ_impl.shapes.Edge):
-        type = DimType.CURVE
-    elif isinstance(cqobject, cq.occ_impl.shapes.Vertex):
-        type = DimType.POINT
-    else:
-        raise ValueError(f"cannot get id for {cqobject}")
-
-    if isinstance(cqobject, cq.occ_impl.shapes.Vertex):
-        vector_id = format_coord_id((cqobject.X, cqobject.Y, cqobject.Z))
-    elif isinstance(cqobject, cq.occ_impl.shapes.Wire):
-        vector_id = format_coord_id(np.average([edge.centerOfMass(cqobject).toTuple() for edge in cqobject.Edges()], axis=0))
-    else:
-        vector_id =  format_coord_id(cqobject.centerOfMass(cqobject).toTuple())
-    return (type, vector_id)
-
-def get_cq_objects(workspace: cq.Workplane, type: Type):
-    vals = []
-    for val in workspace.vals():
-        if isinstance(val, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
-            if type in (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid):
-                vals.append(val)
-            elif type == cq.occ_impl.shapes.Face:
-                vals += val.Faces()
-            elif type == cq.occ_impl.shapes.Edge:
-                vals += val.Edges()
-        else:
-            assert isinstance(val, type), "non compound/solid tags must be of the same type as current workplane"
-            vals.append(val)
-
-    return vals
-
-def get_entities(register: dict[GeoEntityId, GeoEntityTransaction], cq_objects: Sequence):
-    entities = []
-    for cq_object in cq_objects:
-        if isinstance(cq_object, cq.occ_impl.shapes.Wire):
-            for edge in cq_object.Edges():
-                id = get_cq_object_id(edge)
-                entities.append(register[id])
-        else:
-            id = get_cq_object_id(cq_object)
-            entities.append(register[id])
-    return entities
-
-def get_selector(selector: Union[Selector, str, None] = None, index: int | None = None):
-    assert not (index is not None and selector is not None), "cannot use both index and selector"
-    
-    if index is not None:
-        selector = AreaNthSelector(index)    
-    elif isinstance(selector, str):
-        selector = StringSyntaxSelector(selector)
-
-    return selector
+from cadquery.selectors import InverseSelector
 
 class Geometry:
     def __init__(self) -> None:
@@ -98,7 +38,7 @@ class Geometry:
             self.ctx.dimension = 2
         else:
             self.ctx.dimension = 3
-        self.mesh = generate_mesh([*transactions, *fields], self.ctx)
+        self.mesh = generate_mesh([*transactions, *fields], self.ctx.dimension, self.ctx)
         return self.mesh
 
     def write(self, filename: str):
@@ -274,7 +214,7 @@ class GeometryQL:
         return self
 
     def to_mesh(self, dim: int = 3):
-        mesh = generate_mesh([*self.vals(), *self.transactions], self.ctx, dim)
+        mesh = generate_mesh([*self.vals(), *self.transactions], dim, self.ctx)
         self.reset()
         return mesh
 

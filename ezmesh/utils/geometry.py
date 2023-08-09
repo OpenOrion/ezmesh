@@ -42,7 +42,7 @@ def get_sampling(start: Number, end: Number, num_samples: int, is_cosine_samplin
     else:
         return np.linspace(start, end, num_samples, endpoint=True)
 
-def commit_transactions(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx: MeshContext):
+def commit_transactions(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx: MeshContext = MeshContext()):
     if isinstance(transactions, Sequence):
         for transaction in transactions:
             transaction.before_sync(ctx)
@@ -55,12 +55,12 @@ def commit_transactions(transactions: Union[GeoTransaction, Sequence[GeoTransact
     else:
         transactions.after_sync(ctx)
 
-def generate_mesh(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx: MeshContext, dim: int = 3):
+def generate_mesh(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], dim: int = 3, ctx: MeshContext = MeshContext()):
     commit_transactions(transactions, ctx)
     gmsh.option.set_number("General.ExpertMode", 1)
+    gmsh.fltk.run()
 
     gmsh.model.mesh.generate(dim)
-    # gmsh.fltk.run()
     
     return import_from_gmsh()
 

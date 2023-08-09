@@ -5,7 +5,7 @@ from typing import Optional, Sequence, cast
 import numpy as np
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
-from ezmesh.geometry.curve_loop import CurveLoop, getSortedEdgeCoords
+from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
 
 @dataclass
@@ -30,8 +30,9 @@ class PlaneSurface(GeoEntityTransaction):
 
     def before_sync(self, ctx: MeshContext):
         curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]
-        self.tag = self.tag or gmsh.model.geo.add_plane_surface(curve_loop_tags)
-        ctx.add_surface(self)
+        if self.tag is None:
+            self.tag = self.tag or gmsh.model.geo.add_plane_surface(curve_loop_tags)
+            ctx.add_surface(self)
         return self.tag
 
     def after_sync(self, ctx: MeshContext):
@@ -52,7 +53,7 @@ class PlaneSurface(GeoEntityTransaction):
             if self.label is not None:
                 gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, self.label)
 
-    def get_coords(self, num_pnts: int = 10, is_cosine_sampling: bool = False):
+    def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
         for curve_loop in self.curve_loops:
             yield curve_loop.get_coords(num_pnts, is_cosine_sampling)
 

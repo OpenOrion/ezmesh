@@ -26,7 +26,9 @@ class Edge(GeoEntityTransaction):
         self.type = DimType.CURVE
     
     def before_sync(self, ctx: MeshContext):
-        ctx.add_edge(self)
+        if self.tag is None:
+            ctx.add_edge(self)
+        return self.tag
 
     def after_sync(self, ctx: MeshContext):
         ...
@@ -71,7 +73,11 @@ class Line(Edge):
     def before_sync(self, ctx: MeshContext):
         start_tag = self.start.before_sync(ctx)
         end_tag = self.end.before_sync(ctx)
-        self.tag = self.tag or gmsh.model.geo.add_line(start_tag, end_tag)
+        if (start_tag, end_tag) in ctx.edge_tags:
+            self.tag = ctx.edge_tags[(start_tag, end_tag)]
+        else:
+            self.tag = self.tag or gmsh.model.geo.add_line(start_tag, end_tag)
+            ctx.edge_tags[(start_tag, end_tag)] = self.tag
         super().before_sync(ctx)   
         return self.tag
 

@@ -36,7 +36,7 @@ def plot_entities(
     include_edges=True,
     include_points=False,
     title: str = "Plot", 
-    samples_per_spline: int = 20, 
+    samples_per_spline: int = 50, 
 ):
     entities = entities if isinstance(entities, Sequence) else [entities]
     fig = go.Figure(
@@ -49,17 +49,19 @@ def plot_entities(
         if isinstance(entity, (Volume, PlaneSurface)):
             surfaces = entity.get_surfaces() if isinstance(entity, Volume) else [entity]
             for surface in surfaces:
-                surface_label = surface.label or f"Surface{surface.tag}"
-                if surface.tag not in surface_coord_groups:
-                    surface_coord_groups[surface_label] = []
-                surface_coord_groups[surface_label] += surface.get_coords(samples_per_spline)
+                # surface_label = surface.label or f"Surface{surface.tag}"
+                # if surface.tag not in surface_coord_groups:
+                #     surface_coord_groups[surface_label] = []
+                # surface_coord_groups[surface_label] += surface.get_coords(samples_per_spline, True)
                 
                 for curve_loop in surface.curve_loops:
                     curve_loop_label = curve_loop.label or f"CurveLoop{curve_loop.tag}"
+                    print(curve_loop_label)
+
                     if curve_loop.tag not in edge_coord_groups:
                         edge_coord_groups[curve_loop_label] = []
 
-                    edge_coords = curve_loop.get_coords(samples_per_spline)
+                    edge_coords = curve_loop.get_coords(samples_per_spline, True)
                     edge_coord_groups[curve_loop_label].append(edge_coords)
 
         elif isinstance(entity, Edge):
