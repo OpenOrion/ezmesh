@@ -1,4 +1,4 @@
-from typing import Callable, Optional, Sequence, Union, cast
+from typing import Callable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
 import gmsh
 import cadquery as cq
@@ -6,9 +6,8 @@ from ezmesh.exporters import export_to_su2
 from ezmesh.geometry.edge import Edge
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.geometry.point import Point
-from ezmesh.utils.cadquery import get_cq_object_id, get_cq_objects, get_entities, get_selector
-from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import GeoEntityTransaction, GeoEntityId, GeoTransaction, MeshContext
+from ezmesh.utils.cadquery import get_entity_id, get_cq_objects_as_type, select_entities, get_selector, initialize_context, intialize_workplane
+from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, MeshContext
 from ezmesh.geometry.field import ExtrudedBoundaryLayer, TransfiniteCurveField, TransfiniteSurfaceField, TransfiniteVolumeField
 from ezmesh.geometry.plot import plot_entities
 from ezmesh.geometry.volume import Volume
@@ -16,6 +15,8 @@ from ezmesh.mesh import Mesh
 from ezmesh.utils.geometry import generate_mesh, commit_transactions
 from jupyter_cadquery import show
 from cadquery.selectors import InverseSelector
+
+from ezmesh.visualizer import visualize_mesh
 
 class Geometry:
     def __init__(self) -> None:
@@ -53,47 +54,20 @@ class GeometryQL:
         self.target = target
         self.workplane = cq.importers.importStep(target) if isinstance(target, str) else target
         self.initial_workplane = self.workplane
-        self.file_path = target if isinstance(target, str) else "workplane.step"
         self.transactions = []
         self.mesh: Optional[Mesh] = None
         self.ctx = MeshContext()
-        self.register: dict[GeoEntityId, GeoEntityTransaction] = {}
-        self.update()
 
-    def update(self):
-
+    def __enter__(self):
         gmsh.initialize()
-        if not isinstance(self.target, str) and self.file_path.endswith(".step"):
-            cq.exporters.export(self.workplane, self.file_path)
 
-        gmsh.open(self.file_path)
-        gmsh.model.geo.synchronize()
+        self.ctx = initialize_context(self.workplane)
+        intialize_workplane(self.workplane, self.ctx)
 
-        self.ctx.update() 
-        for (_, volume_tag) in gmsh.model.occ.getEntities(DimType.VOLUME.value):
-            volume = Volume.from_tag(volume_tag, self.ctx)
-            self.register[volume.id] = volume
-            for surface_loop in volume.surface_loops:
-                for surface in surface_loop.surfaces:
-                    self.register[surface.id] = surface
-                    for curve_loop in surface.curve_loops:
-                        # self.register[curve_loop.id] = curve_loop
-                        for edge in curve_loop.edges:
-                            self.register[edge.id] = edge
-        
-        for tag, point in self.ctx.points.items():
-            self.register[point.id] = point
+        return self
 
-        # Add all surfaces, edges and vertices to the workplane
-        cq_objects = [
-            *self.workplane.faces().vals(), 
-            *self.workplane.edges().vals(), 
-            *self.workplane.vertices().vals()
-        ]
-        for cq_object in cq_objects:
-            dim_type, _ = id = get_cq_object_id(cq_object)
-            tag = f"{dim_type.name.lower()}/{self.register[id].tag}"
-            self.workplane.newObject([cq_object]).tag(tag)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        gmsh.finalize()
 
     def reset(self):
         self.workplane = self.initial_workplane
@@ -113,11 +87,11 @@ class GeometryQL:
         tagged_cq_objects = []
         for tag in tags:
             tagged_workspace = self.workplane._getTagged(tag)
-            tagged_cq_objects += get_cq_objects(tagged_workspace, type(cq_objects[0]))
-        tagged_cq_object_ids = [get_cq_object_id(tagged_cq_object) for tagged_cq_object in tagged_cq_objects] 
+            tagged_cq_objects += get_cq_objects_as_type(tagged_workspace, type(cq_objects[0]))
+        tagged_cq_object_ids = [get_entity_id(tagged_cq_object) for tagged_cq_object in tagged_cq_objects] 
 
         for cq_object in cq_objects:
-            id = get_cq_object_id(cq_object)
+            id = get_entity_id(cq_object)
             if (not inverse and id in tagged_cq_object_ids) or (inverse and id not in tagged_cq_object_ids):
                 filtered_cq_objects.append(cq_object)
 
@@ -145,8 +119,8 @@ class GeometryQL:
         self.workplane = self.workplane.vertices(selector, tag)
         return self
 
-    def vals(self) -> Sequence[GeoEntityTransaction]:
-        return get_entities(self.register, self.workplane.vals())
+    def vals(self) -> Sequence[GeoEntity]:
+        return select_entities(self.workplane, self.ctx)
 
     def tag(self, name: str):
         self.workplane = self.workplane.tag(name)
@@ -177,7 +151,7 @@ class GeometryQL:
         for surface in surfaces:
             edges = surface.get_edges()
             curve_field = TransfiniteCurveField(edges, [node_count]*len(edges))
-            points = get_entities(self.register, point_select(self.workplane).vals())
+            points = select_entities(point_select(self.workplane), self.ctx)
             surface_field = TransfiniteSurfaceField(surface, points)
             self.transactions.append(curve_field)
             self.transactions.append(surface_field)
@@ -213,27 +187,34 @@ class GeometryQL:
         self.reset()
         return self
 
-    def to_mesh(self, dim: int = 3):
-        mesh = generate_mesh([*self.vals(), *self.transactions], dim, self.ctx)
+    def generate(self, dim: int = 3):
+        self.mesh = generate_mesh([*self.vals(), *self.transactions], dim, self.ctx)
         self.reset()
-        return mesh
+        return self
 
     def write(self, filename: str, dim: int = 3):
-        mesh = self.to_mesh(dim)
+        if self.mesh is None:
+            self.generate(dim)
+        assert self.mesh is not None
         if filename.endswith(".su2"):
-            export_to_su2(mesh, filename)
+            export_to_su2(self.mesh, filename)
         else:
             gmsh.write(filename)
         return self
 
-    def show(self):
-        show(self.workplane)
+    def show(self, type: Literal["fltk", "mesh", "cadquery", "plot"] = "cadquery"):
+        if type == "fltk":
+            gmsh.fltk.run()
+        elif type == "mesh":
+            assert self.mesh is not None, "Mesh is not generated yet."
+            visualize_mesh(self.mesh)
+        elif type == "plot":
+            entities = self.vals()
+            plot_entities(entities)
+        else:
+            show(self.workplane)
         return self
 
-    def plot(self, include_surfaces=True, include_edges=True, include_points=False, title: str = "Plot", samples_per_spline: int = 20, ):
-        entities = self.vals()
-        plot_entities(entities, include_surfaces, include_edges, include_points, title, samples_per_spline)
-        return self
 
     def close(self):
         gmsh.finalize()

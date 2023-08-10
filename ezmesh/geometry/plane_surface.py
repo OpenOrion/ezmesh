@@ -4,12 +4,12 @@ from typing import Optional, Sequence, cast
 
 import numpy as np
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
+from ezmesh.geometry.transaction import MeshContext, GeoEntity
 from ezmesh.geometry.curve_loop import CurveLoop
 from ezmesh.geometry.edge import Edge
 
 @dataclass
-class PlaneSurface(GeoEntityTransaction):
+class PlaneSurface(GeoEntity):
     curve_loops: Sequence[CurveLoop]
     "outline curve loop that make up the surface"
 
@@ -30,9 +30,8 @@ class PlaneSurface(GeoEntityTransaction):
 
     def before_sync(self, ctx: MeshContext):
         curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]
-        if self.tag is None:
-            self.tag = self.tag or gmsh.model.geo.add_plane_surface(curve_loop_tags)
-            ctx.add_surface(self)
+        self.tag = self.tag or gmsh.model.geo.add_plane_surface(curve_loop_tags)
+        ctx.add_surface(self)
         return self.tag
 
     def after_sync(self, ctx: MeshContext):

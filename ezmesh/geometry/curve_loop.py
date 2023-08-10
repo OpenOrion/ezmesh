@@ -4,7 +4,7 @@ from typing import Optional, Sequence, Union, cast
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import GeoEntityId, MeshContext, GeoEntityTransaction, format_coord_id
+from ezmesh.geometry.transaction import GeoEntityId, MeshContext, GeoEntity, format_coord_id
 from ezmesh.geometry.edge import Curve, Edge, Line
 from ezmesh.geometry.point import Point
 from ezmesh.utils.types import NumpyFloat
@@ -51,7 +51,8 @@ def get_sorted_paths(edges: Sequence[Edge]):
                 edges.pop(i)
                 break
         else:
-            raise ValueError("Edges do not form a closed loop")
+            print("Warning: Edges do not form a closed loop")
+            edges = []
     return sorted_paths
 
 
@@ -66,7 +67,7 @@ def get_lines(coords: npt.NDArray[NumpyFloat], mesh_size: float, labels: Union[s
     ]
 
 @dataclass
-class CurveLoop(GeoEntityTransaction):
+class CurveLoop(GeoEntity):
     edges: Sequence[Edge]
     "Lines of curve"
 
@@ -79,12 +80,6 @@ class CurveLoop(GeoEntityTransaction):
     def __post_init__(self):
         self.type = DimType.CURVE_LOOP
     
-
-    def set_label(self, label: str):
-        for edge in self.edges:
-            edge.set_label(label)
-        super().set_label(label)
-
     @property
     def edge_groups(self):
         edge_groups: dict[str, list[Edge]] = {}
@@ -96,14 +91,15 @@ class CurveLoop(GeoEntityTransaction):
                 edge_groups[name].append(edge)
         return edge_groups
 
-    @property
-    def sorted_paths(self):
-        return get_sorted_paths(self.edges)
+    def set_label(self, label: str):
+        for edge in self.edges:
+            edge.set_label(label)
+        super().set_label(label)
 
     def before_sync(self, ctx: MeshContext):
         edge_tags = [
             sorted_path.direction*cast(int, sorted_path.edge.before_sync(ctx)) 
-            for sorted_path in self.sorted_paths
+            for sorted_path in get_sorted_paths(self.edges)
         ]
         self.tag = self.tag or gmsh.model.geo.add_curve_loop(edge_tags)
         return self.tag
@@ -111,6 +107,21 @@ class CurveLoop(GeoEntityTransaction):
     def after_sync(self, ctx: MeshContext):
         for edge in self.edges:
             edge.after_sync(ctx)        
+
+    def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
+        coord_groups = []
+        for sorted_path in get_sorted_paths(self.edges):
+            coord_group = sorted_path.edge.get_coords(num_pnts, is_cosine_sampling)
+            if sorted_path.direction == -1:
+                coord_group = coord_group[::-1]
+            coord_groups.append(coord_group)
+        return np.concatenate(coord_groups)
+
+    @staticmethod
+    def from_tag(tag: int, edge_tags: Sequence[int], ctx: MeshContext):
+        edges = [Edge.from_tag(edge_tag, ctx) for edge_tag in edge_tags]
+        curve_loop = CurveLoop(edges, tag=tag)
+        return curve_loop
 
     @staticmethod
     def from_coords(
@@ -154,26 +165,3 @@ class CurveLoop(GeoEntityTransaction):
                 property_index += 1
 
         return CurveLoop(edges, label)
-    
-    def get_edges(self):
-        return self.edges
-
-    def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
-        coord_groups = []
-        for sorted_path in self.sorted_paths:
-            coord_group = sorted_path.edge.get_coords(num_pnts, is_cosine_sampling)
-            if sorted_path.direction == -1:
-                coord_group = coord_group[::-1]
-            coord_groups.append(coord_group)
-        return np.concatenate(coord_groups)
-
-    @staticmethod
-    def from_tag(tag: int, edge_tags: Sequence[int], ctx: MeshContext):
-        edges = [Edge.from_tag(edge_tag, ctx) for edge_tag in edge_tags]
-        curve_loop = CurveLoop(edges, tag=tag)
-        return curve_loop
-    
-    @property
-    def id(self) -> GeoEntityId:
-        vector_id = format_coord_id(np.average([edge.id[1] for edge in self.edges], axis=0))
-        return (self.type, vector_id)

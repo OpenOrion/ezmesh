@@ -58,7 +58,6 @@ def commit_transactions(transactions: Union[GeoTransaction, Sequence[GeoTransact
 def generate_mesh(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], dim: int = 3, ctx: MeshContext = MeshContext()):
     commit_transactions(transactions, ctx)
     gmsh.option.set_number("General.ExpertMode", 1)
-    gmsh.fltk.run()
 
     gmsh.model.mesh.generate(dim)
     

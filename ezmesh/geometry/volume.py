@@ -5,11 +5,11 @@ import gmsh
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.utils.types import DimType
 from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.transaction import MeshContext, GeoEntityTransaction
+from ezmesh.geometry.transaction import MeshContext, GeoEntity
 from ezmesh.geometry.surface_loop import SurfaceLoop
 
 @dataclass
-class Volume(GeoEntityTransaction):
+class Volume(GeoEntity):
     surface_loops: Sequence[SurfaceLoop]
     "surface loop of volume"
 

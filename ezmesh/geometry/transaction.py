@@ -1,7 +1,7 @@
 from dataclasses import field
 import gmsh
 import numpy as np
-from typing import Any, Callable, Iterable, Optional, Protocol, Sequence
+from typing import Iterable, Optional, Protocol, Sequence
 from ezmesh.utils.types import DimType
 from ezmesh.utils.types import Number, NumpyFloat
 
@@ -23,19 +23,19 @@ def get_unique_edges(lst):
 class MeshContext:
     point_tags: dict[tuple[Number, Number, Number], int]
     edge_tags: dict[tuple[int, int], int]
-    points: dict[int, "GeoEntityTransaction"]
-    edges: dict[int, "GeoEntityTransaction"]
-    surfaces: dict[int, "GeoEntityTransaction"]
-
+    points: dict[int, "GeoEntity"]
+    edges: dict[int, "GeoEntity"]
+    surfaces: dict[int, "GeoEntity"]
+    register: dict[GeoEntityId, "GeoEntity"]
     def __init__(self, dimension: int = 3) -> None:
         self.dimension = dimension
         self.point_tags = {}
         self.edge_tags = {}
-
         self.points = {}
         self.edges = {}
         self.surfaces = {}
-        # self.edge_node_tags = {}
+        self.register = {}
+
 
     def add_surface(self, surface):
         self.surfaces[surface.tag] = surface
@@ -89,19 +89,8 @@ class GeoTransaction(Protocol):
         "completes transaction after syncronization and returns tag."
         ...
 
-class CommandTransaction(GeoTransaction):
-    def __init__(self, before_sync: Callable[[MeshContext], None], after_sync: Callable[[MeshContext], None]):
-        self.before_sync_func = before_sync
-        self.after_sync_func = after_sync
-    
-    def before_sync(self, ctx: MeshContext):
-        self.before_sync_func(ctx)
 
-    def after_sync(self, ctx: MeshContext):
-        self.after_sync_func(ctx)
-
-
-class GeoEntityTransaction(GeoTransaction, Protocol):
+class GeoEntity(GeoTransaction, Protocol):
     tag: Optional[int] = None
     "tag of entity"
 
@@ -120,10 +109,5 @@ class GeoEntityTransaction(GeoTransaction, Protocol):
     def set_label(self, label: str):
         self.label = label
 
-    @property
-    def id(self) -> GeoEntityId:
-        vector_id = format_coord_id(gmsh.model.occ.getCenterOfMass(self.type.value, self.tag))
-        return (self.type, vector_id)
-
-    def __eq__(self, __value: "GeoEntityTransaction") -> bool:
+    def __eq__(self, __value: "GeoEntity") -> bool:
         return (self.type, self.tag) == (__value.type, __value.tag)

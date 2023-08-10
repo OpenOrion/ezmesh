@@ -1,12 +1,12 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional, Sequence
-from ezmesh.geometry.transaction import GeoEntityTransaction, MeshContext, GeoTransaction
+from ezmesh.geometry.transaction import GeoEntity, MeshContext, GeoTransaction
 from ezmesh.geometry.plane_surface import PlaneSurface
 from ezmesh.utils.types import DimType
 
 @dataclass
-class SurfaceLoop(GeoEntityTransaction):
+class SurfaceLoop(GeoEntity):
     surfaces: Sequence[PlaneSurface]
     "Lines of curve"
 
