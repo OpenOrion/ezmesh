@@ -7,7 +7,7 @@ from ezmesh.geometry.transaction import DimType, GeoEntity, Context
 from cadquery import Selector
 from cadquery.selectors import AndSelector, StringSyntaxSelector
 from cadquery.cq import CQObject
-from ezmesh.utils.geometry import normalize_coord
+from ezmesh.utils.norm import norm_coord
 
 CQObject3D =  (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)
 CQObject2D =  (cq.occ_impl.shapes.Face, cq.occ_impl.shapes.Wire)
@@ -76,34 +76,28 @@ def get_cq_objects_as_type(workplane: cq.Workplane, type: Type):
 
     return vals
 
-def get_entity_id(target: Union[CQObject, GeoEntity]):
-    if isinstance(target, CQObject):
-        if isinstance(target, CQObject3D):
-            type = DimType.VOLUME
-        elif isinstance(target, cq.occ_impl.shapes.Face):
-            type = DimType.SURFACE
-        elif isinstance(target, cq.occ_impl.shapes.Wire):
-            type = DimType.CURVE_LOOP
-        elif isinstance(target, cq.occ_impl.shapes.Edge):
-            type = DimType.CURVE
-        elif isinstance(target, cq.occ_impl.shapes.Vertex):
-            type = DimType.POINT
-        else:
-            raise ValueError(f"cannot get id for {target}")
-
-        if isinstance(target, cq.occ_impl.shapes.Vertex):
-            vector_id = normalize_coord((target.X, target.Y, target.Z))
-        elif isinstance(target, cq.occ_impl.shapes.Wire):
-            vector_id = normalize_coord(np.average([edge.centerOfMass(target).toTuple() for edge in target.Edges()], axis=0))
-        else:
-            vector_id =  normalize_coord(target.centerOfMass(target).toTuple())
-        return (type, vector_id)
+def get_entity_id(target: CQObject):
+    if isinstance(target, CQObject3D):
+        type = DimType.VOLUME
+    elif isinstance(target, cq.occ_impl.shapes.Face):
+        type = DimType.SURFACE
+    elif isinstance(target, cq.occ_impl.shapes.Wire):
+        type = DimType.CURVE_LOOP
+    elif isinstance(target, cq.occ_impl.shapes.Edge):
+        type = DimType.CURVE
+    elif isinstance(target, cq.occ_impl.shapes.Vertex):
+        type = DimType.POINT
     else:
-        if isinstance(target, Point):
-            vector_id = normalize_coord(target.coord)
-        else:
-            vector_id = normalize_coord(gmsh.model.occ.getCenterOfMass(target.type.value, target.tag))
-        return (target.type, vector_id)
+        raise ValueError(f"cannot get id for {target}")
+
+    if isinstance(target, cq.occ_impl.shapes.Vertex):
+        vector_id = norm_coord((target.X, target.Y, target.Z))
+    elif isinstance(target, cq.occ_impl.shapes.Wire):
+        vector_id = norm_coord(np.average([edge.centerOfMass(target).toTuple() for edge in target.Edges()], axis=0))
+    else:
+        vector_id =  norm_coord(target.centerOfMass(target).toTuple())
+    return (type, vector_id)
+
 
 def select_entities(cq_objects: Sequence[CQObject], ctx: Context):
     entities = []
@@ -138,17 +132,16 @@ def initialize_entities_2d(
 
                 is_line = norm(first - last) == norm(first - middle)
                 if is_line:
-                    line = Line(Point(normalize_coord(first.toTuple()), mesh_size), Point(normalize_coord(last.toTuple()), mesh_size))
+                    line = Line(Point(norm_coord(first.toTuple()), mesh_size), Point(norm_coord(last.toTuple()), mesh_size))
                 else:
                     edges_points = edge.positions(np.linspace(0, 1, samples_per_spline, endpoint=True))
-                    points = [Point(normalize_coord(vec.toTuple()), mesh_size) for vec in edges_points]
+                    points = [Point(norm_coord(vec.toTuple()), mesh_size) for vec in edges_points]
                     points.append(points[0])
                     line = Curve(points, "Spline")
                 
                 ctx.register[get_entity_id(edge)] = line
                 for point in line.get_points():
-                    point_id = get_entity_id(point)
-                    ctx.register[point_id] = point
+                    ctx.register[point.id] = point
                 
                     edge_entities.append(line)
                 curve_loop = CurveLoop(edge_entities)
@@ -186,18 +179,17 @@ def initialize_context(workplane: cq.Workplane, ctx: Context):
         gmsh.open(file_path)
         gmsh.model.geo.synchronize()
 
+        ctx.update()
         for (_, volume_tag) in gmsh.model.occ.getEntities(DimType.VOLUME.value):
             volume = Volume.from_tag(volume_tag, ctx)
-            ctx.register[get_entity_id(volume)] = volume
+            ctx.register[volume.id] = volume
             for surface in volume.get_surfaces():
-                ctx.register[get_entity_id(surface)] = surface
+                ctx.register[surface.id] = surface
                 for edge in surface.get_edges():
-                        ctx.register[get_entity_id(edge)] = edge
+                        ctx.register[edge.id] = edge
                         for point in edge.get_points():
-                            ctx.register[get_entity_id(point)] = point
+                            ctx.register[point.id] = point
 
-        for point in ctx.points.values():
-            ctx.register[get_entity_id(point)] = point
     return ctx
 
 def intialize_workplane(workplane: cq.Workplane, ctx: Context):

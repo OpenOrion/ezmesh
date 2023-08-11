@@ -3,7 +3,7 @@ from typing import Optional, Union, cast
 import gmsh
 import numpy as np
 import numpy.typing as npt
-from ezmesh.utils.geometry import normalize_coord
+from ezmesh.utils.norm import norm_coord
 from ezmesh.geometry.transaction import DimType, GeoEntity, Context
 from ezmesh.utils.types import Number, NumpyFloat
 
@@ -37,7 +37,7 @@ class Point(GeoEntity):
             gmsh.model.geo.mesh.setSize([(self.type.value, self.tag)], self.mesh_size)
             
     def before_sync(self, ctx: Context):
-        pnt_key = normalize_coord(self.coord, round_by=None)
+        pnt_key = norm_coord(self.coord, round_by=None)
 
         if pnt_key in ctx.point_tags:
             self.tag = ctx.point_tags[pnt_key]
@@ -50,3 +50,6 @@ class Point(GeoEntity):
     def after_sync(self, ctx: Context):
         return super().after_sync(ctx)
     
+    @property
+    def id(self):
+        return (self.type, norm_coord(self.coord))

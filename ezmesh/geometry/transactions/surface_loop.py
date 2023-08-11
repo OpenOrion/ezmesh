@@ -20,7 +20,7 @@ class SurfaceLoop(GeoEntity):
 
     def before_sync(self, ctx: Context):
         surface_loop_tags = [surface.before_sync(ctx) for surface in self.surfaces]
-        self.tag = self.tag or gmsh.model.geo.addSurfaceLoop(surface_loop_tags)
+        self.tag = self.tag or gmsh.model.occ.addSurfaceLoop(surface_loop_tags)
         return self.tag
 
     def after_sync(self, ctx: Context):

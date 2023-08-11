@@ -1,14 +1,15 @@
 import gmsh
+import cadquery as cq
 from typing import Callable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
-import cadquery as cq
 from ezmesh import export_to_su2
-from ezmesh.geometry.transactions import Point, Edge, PlaneSurface
+from ezmesh.geometry.transactions import Point, PlaneSurface
 from ezmesh.mesh import Mesh
+from ezmesh.mesh.transactions.refinement import Recombine
 from ezmesh.utils.cadquery import CQObject3D, get_entity_id, get_cq_objects_as_type, select_entities, get_selector, initialize_context, intialize_workplane
-from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, Context, commit_transactions
-from ezmesh.geometry.transactions.field import ExtrudedBoundaryLayer
-from ezmesh.mesh.transaction import generate_mesh
+from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, Context
+# from ezmesh.mesh.transactions.transfinite import ExtrudedBoundaryLayer
+from ezmesh.mesh.transaction import MeshTransaction, generate_mesh
 from jupyter_cadquery import show
 from ezmesh.mesh.visualizer import visualize_mesh
 from ezmesh.geometry.plot import plot_entities
@@ -24,13 +25,10 @@ class Geometry:
     def __exit__(self, exc_type, exc_val, exc_tb):
         gmsh.finalize()
 
-    def commit(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]]):
-        commit_transactions(transactions, self.ctx)
-
-    def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]]):
+    def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]], mesh_transactions: Sequence[MeshTransaction] = []):
         transactions = transactions if isinstance(transactions, Sequence) else [transactions]
         self.ctx.dimension = 2 if isinstance(transactions[0], PlaneSurface) else 3
-        self.mesh = generate_mesh(transactions, self.ctx.dimension, self.ctx)
+        self.mesh = generate_mesh(transactions, mesh_transactions, self.ctx, self.ctx.dimension)
         return self.mesh
 
     def write(self, filename: str):
@@ -44,7 +42,9 @@ class GeometryQL:
     _workplane: cq.Workplane
     _initial_workplane: cq.Workplane
     def __init__(self) -> None:
-        self._transactions = []
+        self._geo_transactions: list[GeoTransaction] = []
+        self._mesh_transactions: list[MeshTransaction] = []
+
         self._mesh: Optional[Mesh] = None
         self._initial_workplane = self._workplane = None # type: ignore
     
@@ -137,15 +137,14 @@ class GeometryQL:
         return self
 
 
-    def setSurfaceQuads(self, quads: bool = True):
+    def recombine(self, angle: float):
         faces = get_cq_objects_as_type(self._workplane, cq.occ_impl.shapes.Face)
         surfaces = select_entities(faces, self._ctx)
-        for surface in cast(Sequence[PlaneSurface], surfaces):
-            surface.set_quad(quads)
+        self._mesh_transactions += [Recombine(surface, angle) for surface in surfaces]
         # self.reset()
         return self
 
-    def setMeshSizes(self, mesh_size: Union[float, Callable[[Point], float]]):
+    def setMeshSize(self, mesh_size: Union[float, Callable[[Point], float]]):
         vertices = get_cq_objects_as_type(self._workplane, cq.occ_impl.shapes.Vertex)
         points = select_entities(vertices, self._ctx)
         for point in cast(Sequence[Point], points):
@@ -155,15 +154,15 @@ class GeometryQL:
         # self.reset()
         return self
 
-    def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
-        target = cast(Sequence[Union[PlaneSurface, Edge]], self.vals())
-        ext_bnd_layer = ExtrudedBoundaryLayer(target, num_layers, hwall_n, ratio)
-        self._transactions.append(ext_bnd_layer)
-        # self.reset()
-        return self
+    # def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
+    #     target = cast(Sequence[Union[PlaneSurface, Edge]], self.vals())
+    #     ext_bnd_layer = ExtrudedBoundaryLayer(target, num_layers, hwall_n, ratio)
+    #     self._transactions.append(ext_bnd_layer)
+    #     # self.reset()
+    #     return self
 
     def generate(self, dim: int = 3):
-        self._mesh = generate_mesh(self.vals(), dim, self._ctx)
+        self._mesh = generate_mesh(self.vals(), self._mesh_transactions, self._ctx, dim)
         self.end()
         return self
 

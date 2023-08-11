@@ -1,11 +1,12 @@
-
+import gmsh
 from dataclasses import dataclass
 from typing import Optional, Sequence, cast
-import gmsh
-from ezmesh.geometry.transactions.plane_surface import PlaneSurface
+from ezmesh.geometry.transactions.plane_surface import PlaneSurface, set_physical_groups
 from ezmesh.geometry.transactions.edge import Edge
 from ezmesh.geometry.transaction import Context, DimType, GeoEntity
 from ezmesh.geometry.transactions.surface_loop import SurfaceLoop
+
+
 
 @dataclass
 class Volume(GeoEntity):
@@ -24,21 +25,14 @@ class Volume(GeoEntity):
     def before_sync(self, ctx: Context):
         surface_loop_tags = [surface_loop.before_sync(ctx) for surface_loop in self.surface_loops]
         self.tag = self.tag or gmsh.model.geo.addVolume(surface_loop_tags)
+        ctx.add_volume(self)
         return self.tag
 
     def after_sync(self, ctx: Context):
         for surface_loop in self.surface_loops:
             surface_loop.after_sync(ctx)
-
-        for (label, surface_tags) in ctx.get_physical_groups(DimType.CURVE).items():
-            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, surface_tags)
-            gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
-
-        for (label, surface_tags) in ctx.get_physical_groups(DimType.SURFACE).items():
-            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.SURFACE.value, surface_tags)
-            gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, label)
-
-
+        set_physical_groups(ctx)
+    
     def get_edges(self):
         edges: Sequence[Edge] = []
         for surface_loop in self.surface_loops:

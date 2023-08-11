@@ -5,6 +5,21 @@ from ezmesh.geometry.transaction import Context, DimType, GeoEntity
 from ezmesh.geometry.transactions.curve_loop import CurveLoop
 from ezmesh.geometry.transactions.edge import Edge
 
+def set_physical_groups(ctx: Context):
+    for (label, edges) in ctx.get_label_groups(DimType.CURVE).items():
+        if (DimType.CURVE.value, label) not in ctx.physical_groups:
+            edge_tags = [edge.tag for edge in edges]
+            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
+            gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
+
+    for (label, surfaces) in ctx.get_label_groups(DimType.SURFACE).items():
+        if (DimType.SURFACE.value, label) not in ctx.physical_groups:
+            surface_tags = [edge.tag for edge in surfaces]
+            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.SURFACE.value, surface_tags)
+            gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, label)
+
+
+
 @dataclass
 class PlaneSurface(GeoEntity):
     curve_loops: Sequence[CurveLoop]
@@ -13,17 +28,11 @@ class PlaneSurface(GeoEntity):
     label: Optional[str] = None
     "label for physical group surface"
 
-    is_quad_mesh: bool = False
-    "if true, surface mesh is made of quadralateral cells, else triangular cells"
-
     tag: Optional[int] = None
     "tag of the surface"
 
     def __post_init__(self):
         self.type = DimType.SURFACE
-
-    def set_quad(self, is_quad_mesh: bool):
-        self.is_quad_mesh = is_quad_mesh
 
     def before_sync(self, ctx: Context):
         curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]
@@ -35,19 +44,9 @@ class PlaneSurface(GeoEntity):
         for curve_loop in self.curve_loops:
             curve_loop.after_sync(ctx)
 
-        if self.is_quad_mesh:
-            gmsh.model.mesh.set_recombine(DimType.SURFACE.value, self.tag)
-
         # Assume that the PlaneSurface is the top-level
         if ctx.dimension == 2:
-            for (label, edge_tags) in ctx.get_physical_groups(DimType.CURVE).items():
-                physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
-                gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
-
-            # NOTICE: add physical group for surface regardless of label because SU2 output bug
-            physical_group_tag = gmsh.model.add_physical_group(DimType.SURFACE.value, [self.tag])
-            if self.label is not None:
-                gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, self.label)
+            set_physical_groups(ctx)
 
     def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
         for curve_loop in self.curve_loops:

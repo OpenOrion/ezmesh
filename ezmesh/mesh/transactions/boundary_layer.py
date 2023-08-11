@@ -1,15 +1,13 @@
 import gmsh
-from dataclasses import dataclass, field
-from typing import Optional, Sequence, Union, cast
+from dataclasses import dataclass
+from typing import Optional, Sequence, Union
 from ezmesh.geometry.transaction import Context, GeoTransaction
 from ezmesh.geometry.transactions.edge import Edge
 from ezmesh.geometry.transactions.plane_surface import PlaneSurface
-from ezmesh.geometry.transactions.point import Point
-from ezmesh.geometry.transactions.volume import Volume
-from ezmesh.utils.types import Number
+from ezmesh.mesh.transaction import MeshTransaction
 
 @dataclass
-class ExtrudedBoundaryLayer(GeoTransaction):
+class BoundaryLayer(MeshTransaction):
     targets: Sequence[Union[Edge, PlaneSurface]]
     "target to be added to the boundary layer"
 
@@ -25,10 +23,8 @@ class ExtrudedBoundaryLayer(GeoTransaction):
     is_quad_mesh: bool = True
     "generate recombined elements in the boundary layer"
 
-    def __post_init__(self):
-        self.tag = None
         
-    def before_sync(self, ctx: Context):
+    def before_gen(self):
         if self.tag is None:
             heights = [self.hwall_n]
             for i in range(1, self.num_layers): 
@@ -45,12 +41,9 @@ class ExtrudedBoundaryLayer(GeoTransaction):
             bnd = gmsh.model.getBoundary(top)
             self.tag = gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
 
-    def after_sync(self, ctx: Context):
-        ...
-
 
 @dataclass
-class BoundaryLayerField(GeoTransaction):
+class BoundaryLayer2D(GeoTransaction):
     edges: Sequence[Edge]
     "edges to be added to the boundary layer"
 
@@ -102,84 +95,3 @@ class BoundaryLayerField(GeoTransaction):
                 gmsh.model.mesh.field.setNumber(self.tag, "thickness", self.thickness)
 
             gmsh.model.mesh.field.setAsBoundaryLayer(self.tag)
-
-
-@dataclass
-class TransfiniteCurveField(GeoTransaction):
-    edges: Sequence[Edge]
-    "edges to be added to the boundary layer"
-
-    node_counts: Sequence[int]
-    "number per curve"
-
-    mesh_types: Optional[Sequence[str]] = None
-    "mesh type for each curve"
-
-    coefs: Optional[Sequence[float]] = None
-    "coefficients for each curve"
-
-    def __post_init__(self):
-        self.is_run = False
-
-    def before_sync(self, ctx: Context):
-        super().before_sync(ctx)
-
-    def after_sync(self, ctx: Context):
-        if not self.is_run:
-            for i, edge in enumerate(self.edges):
-                gmsh.model.mesh.setTransfiniteCurve(
-                    edge.tag,
-                    numNodes=self.node_counts[i]+1,
-                    # meshType=get_property(self.mesh_types, i, edge.label, "Progression"),
-                    # coef=get_property(self.coefs, i, edge.label, 1.0)
-                )
-
-            self.is_run = True
-
-
-@dataclass
-class TransfiniteSurfaceField(GeoTransaction):
-    """
-    A plane surface with transfinite meshing. Normal plane if corners are not defined.
-    """
-    surfaces: Union[PlaneSurface, Sequence[PlaneSurface]]
-    "surface to apply field"
-
-    corners: list[Point] = field(default_factory=list)
-    "corners of transfinite surface"
-
-    arrangement: str = "Left"
-    "arrangement of transfinite surface"
-
-    def __post_init__(self):
-        self.surfaces = [self.surfaces] if isinstance(self.surfaces, PlaneSurface) else self.surfaces
-        self.is_run = False
-
-    def before_sync(self, ctx: Context):
-        super().before_sync(ctx)
-
-    def after_sync(self, ctx: Context):      
-        if not self.is_run:
-            corner_tags = [cast(int, corner.tag) for corner in self.corners]
-            for surface in cast(Sequence[PlaneSurface], self.surfaces):
-                gmsh.model.mesh.setTransfiniteSurface(surface.tag, self.arrangement, corner_tags)
-
-@dataclass
-class TransfiniteVolumeField(GeoTransaction):
-    """
-    A plane surface with transfinite meshing. Normal plane if corners are not defined.
-    """
-    volumes: Union[Volume, Sequence[Volume]]
-    "surface to apply field"
-
-    def __post_init__(self):
-        self.is_run = False
-        self.volumes = [self.volumes] if isinstance(self.volumes, Volume) else self.volumes
-
-    def before_sync(self, ctx: Context):
-        super().before_sync(ctx)
-
-    def after_sync(self, ctx: Context):      
-        if not self.is_run:
-            for volume in cast(Sequence[Volume], self.volumes):
-                gmsh.model.mesh.setTransfiniteVolume(volume.tag)
