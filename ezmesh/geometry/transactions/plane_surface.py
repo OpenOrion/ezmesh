@@ -1,12 +1,9 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional, Sequence, cast
-
-import numpy as np
-from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import MeshContext, GeoEntity
-from ezmesh.geometry.curve_loop import CurveLoop
-from ezmesh.geometry.edge import Edge
+from ezmesh.geometry.transaction import Context, DimType, GeoEntity
+from ezmesh.geometry.transactions.curve_loop import CurveLoop
+from ezmesh.geometry.transactions.edge import Edge
 
 @dataclass
 class PlaneSurface(GeoEntity):
@@ -28,13 +25,13 @@ class PlaneSurface(GeoEntity):
     def set_quad(self, is_quad_mesh: bool):
         self.is_quad_mesh = is_quad_mesh
 
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]
         self.tag = self.tag or gmsh.model.geo.add_plane_surface(curve_loop_tags)
         ctx.add_surface(self)
         return self.tag
 
-    def after_sync(self, ctx: MeshContext):
+    def after_sync(self, ctx: Context):
         for curve_loop in self.curve_loops:
             curve_loop.after_sync(ctx)
 
@@ -58,14 +55,10 @@ class PlaneSurface(GeoEntity):
 
 
     def get_edges(self):
-        edges: Sequence[Edge] = []
-        for curve_loop in self.curve_loops:
-            edges += curve_loop.edges
-        return edges
-
+        return [edge for curve_loop in self.curve_loops for edge in curve_loop.edges]
 
     @staticmethod
-    def from_tag(tag: int, ctx: MeshContext):
+    def from_tag(tag: int, ctx: Context):
         curve_loop_tags, curve_tags = gmsh.model.occ.get_curve_loops(tag)
         curve_loops = [ 
             CurveLoop.from_tag(curve_loop_tag, cast(Sequence[int], curve_tags[i]), ctx)

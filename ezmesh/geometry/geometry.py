@@ -1,26 +1,21 @@
+import gmsh
 from typing import Callable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
-import gmsh
 import cadquery as cq
-from ezmesh.exporters import export_to_su2
-from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.plane_surface import PlaneSurface
-from ezmesh.geometry.point import Point
-from ezmesh.utils.cadquery import CQObject3D, get_entity_id, get_cq_objects_as_type, select_entities, get_selector, initialize_context, intialize_workplane
-from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, MeshContext
-from ezmesh.geometry.field import ExtrudedBoundaryLayer, TransfiniteCurveField, TransfiniteSurfaceField, TransfiniteVolumeField
-from ezmesh.geometry.plot import plot_entities
-from ezmesh.geometry.volume import Volume
+from ezmesh import export_to_su2
+from ezmesh.geometry.transactions import Point, Edge, PlaneSurface
 from ezmesh.mesh import Mesh
-from ezmesh.utils.geometry import generate_mesh, commit_transactions
+from ezmesh.utils.cadquery import CQObject3D, get_entity_id, get_cq_objects_as_type, select_entities, get_selector, initialize_context, intialize_workplane
+from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, Context, commit_transactions
+from ezmesh.geometry.transactions.field import ExtrudedBoundaryLayer
+from ezmesh.mesh.transaction import generate_mesh
 from jupyter_cadquery import show
-from cadquery.selectors import InverseSelector
-
-from ezmesh.visualizer import visualize_mesh
+from ezmesh.mesh.visualizer import visualize_mesh
+from ezmesh.geometry.plot import plot_entities
 
 class Geometry:
     def __init__(self) -> None:
-        self.ctx = MeshContext()
+        self.ctx = Context()
 
     def __enter__(self):
         gmsh.initialize()
@@ -32,14 +27,10 @@ class Geometry:
     def commit(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]]):
         commit_transactions(transactions, self.ctx)
 
-    def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]], fields: Optional[Sequence[GeoTransaction]] = None):
-        fields = fields if fields is not None else []
+    def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]]):
         transactions = transactions if isinstance(transactions, Sequence) else [transactions]
-        if isinstance(transactions, Sequence) and isinstance(transactions[0], PlaneSurface):
-            self.ctx.dimension = 2
-        else:
-            self.ctx.dimension = 3
-        self.mesh = generate_mesh([*transactions, *fields], self.ctx.dimension, self.ctx)
+        self.ctx.dimension = 2 if isinstance(transactions[0], PlaneSurface) else 3
+        self.mesh = generate_mesh(transactions, self.ctx.dimension, self.ctx)
         return self.mesh
 
     def write(self, filename: str):
@@ -80,7 +71,7 @@ class GeometryQL:
             self._workplane = self._workplane.extrude(0.001).faces(">Z")
         self._initial_workplane = self._workplane
 
-        self._ctx = MeshContext(dim)
+        self._ctx = Context(dim)
 
         initialize_context(self._workplane, self._ctx)
         intialize_workplane(self._workplane, self._ctx)
@@ -145,28 +136,11 @@ class GeometryQL:
         # self.reset()
         return self
 
-    def addTransfiniteVolume(self):
-        for volume in cast(Sequence[Volume], self.vals()):
-            volume_field = TransfiniteVolumeField([volume])
-            self._transactions.append(volume_field)
-        # self.reset()
-        return self
-
-    def addTransfiniteSurface(self, node_count: int, point_select: Callable[[cq.Workplane], cq.Workplane]):
-        surfaces = cast(Sequence[PlaneSurface], self.vals())
-        for surface in surfaces:
-            edges = surface.get_edges()
-            curve_field = TransfiniteCurveField(edges, [node_count]*len(edges))
-            points = select_entities(point_select(self._workplane).vals(), self._ctx)
-            surface_field = TransfiniteSurfaceField(surface, points)
-            self._transactions.append(curve_field)
-            self._transactions.append(surface_field)
-        # self.reset()
-        return self
-    
 
     def setSurfaceQuads(self, quads: bool = True):
-        for surface in cast(Sequence[PlaneSurface], self.vals()):
+        faces = get_cq_objects_as_type(self._workplane, cq.occ_impl.shapes.Face)
+        surfaces = select_entities(faces, self._ctx)
+        for surface in cast(Sequence[PlaneSurface], surfaces):
             surface.set_quad(quads)
         # self.reset()
         return self
@@ -181,13 +155,6 @@ class GeometryQL:
         # self.reset()
         return self
 
-    def addTransfiniteSurfaceField(self):
-        surfaces = cast(Sequence[PlaneSurface], self.vals())
-        surface_field = TransfiniteSurfaceField(surfaces)
-        self._transactions.append(surface_field)
-        return self
-
-
     def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
         target = cast(Sequence[Union[PlaneSurface, Edge]], self.vals())
         ext_bnd_layer = ExtrudedBoundaryLayer(target, num_layers, hwall_n, ratio)
@@ -196,7 +163,7 @@ class GeometryQL:
         return self
 
     def generate(self, dim: int = 3):
-        self._mesh = generate_mesh([*self.vals(), *self._transactions], dim, self._ctx)
+        self._mesh = generate_mesh(self.vals(), dim, self._ctx)
         self.end()
         return self
 

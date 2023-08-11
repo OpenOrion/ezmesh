@@ -1,15 +1,13 @@
 
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Optional, Sequence, cast
 import gmsh
 import numpy as np
 import numpy.typing as npt
-from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import MeshContext, GeoEntity
-from ezmesh.geometry.point import Point
+from ezmesh.geometry.transaction import Context, DimType, GeoEntity
+from ezmesh.geometry.transactions.point import Point
 from ezmesh.utils.geometry import get_sampling
 from ezmesh.utils.types import NumpyFloat
-from scipy.interpolate import splprep
 
 def unit_vector(vector: npt.NDArray[NumpyFloat]) -> npt.NDArray[NumpyFloat]:
     """ Returns the unit vector of the vector.  """
@@ -29,11 +27,11 @@ class Edge(GeoEntity):
         self.label = None
         self.type = DimType.CURVE
     
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         ctx.add_edge(self)
         return self.tag
 
-    def after_sync(self, ctx: MeshContext):
+    def after_sync(self, ctx: Context):
         ...
 
     def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False) -> npt.NDArray[NumpyFloat]:
@@ -47,11 +45,10 @@ class Edge(GeoEntity):
             return np.array([coords[0], coords[-1]])
         return coords
 
-
     @staticmethod
-    def from_tag(tag: int, ctx: MeshContext):
+    def from_tag(tag: int, ctx: Context):
         if tag in ctx.edges:
-            return ctx.edges[tag]
+            return cast(Edge, ctx.edges[tag])
         edge = Edge()
         edge.tag = tag
         start_coord, end_coord = edge.get_coords(2)
@@ -71,7 +68,7 @@ class Line(Edge):
     label: Optional[str] = None
     "physical group label"
 
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         start_tag = self.start.before_sync(ctx)
         end_tag = self.end.before_sync(ctx)
         if (start_tag, end_tag) in ctx.edge_tags:
@@ -107,13 +104,15 @@ class Curve(Edge):
     def get_points(self):
         return self.ctrl_pnts
 
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         ctx.add_edge(self)
-
         ctrl_pnt_tags = [ctrl_point.before_sync(ctx) for ctrl_point in self.ctrl_pnts]
-
-        if (self.start.tag, self.end.tag) in ctx.edge_tags:
-            self.tag = ctx.edge_tags[(self.start.tag, self.end.tag)]
+        
+        #TODO: this can be problematic to be used as a key
+        edge_key = (ctrl_pnt_tags[0], ctrl_pnt_tags[-1])
+        
+        if edge_key in ctx.edge_tags:
+            self.tag = ctx.edge_tags[edge_key]
         else:
             if self.tag is None:
                 if self.type == "BSpline":
@@ -130,13 +129,7 @@ class Curve(Edge):
     
 
     def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
-
-        return self.ctrl_pnts
-        # point_coords = np.array([point.coord for point in self.ctrl_pnts])
-        # x = point_coords[:,0]
-        # y = point_coords[:,1]
-        # z = point_coords[:,2]
-
-        # xnew = np.linspace(x.min(), y.max(), num_pnts)  
-
-        # power_smooth = splprep(point_coords[0], point_coords[1], xnew)
+        if self.tag is None:
+            return self.ctrl_pnts
+        else:
+            return super().get_coords(num_pnts, is_cosine_sampling)

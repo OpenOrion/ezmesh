@@ -1,11 +1,9 @@
-from typing import Optional, Sequence, Union, cast
+from typing import Sequence, Union
 from plotly import graph_objects as go
-from ezmesh.geometry.curve_loop import CurveLoop
-from ezmesh.geometry.edge import Edge
+from ezmesh.geometry.transactions.edge import Edge
 from ezmesh.geometry.transaction import GeoEntity
-from ezmesh.geometry.plane_surface import PlaneSurface
-from ezmesh.geometry.point import Point
-from ezmesh.geometry.volume import Volume
+from ezmesh.geometry.transactions.plane_surface import PlaneSurface
+from ezmesh.geometry.transactions.volume import Volume
 import numpy.typing as npt
 import numpy as np
 from ezmesh.utils.types import NumpyFloat

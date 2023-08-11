@@ -1,13 +1,11 @@
 import gmsh
 from dataclasses import dataclass, field
 from typing import Optional, Sequence, Union, cast
-from ezmesh.geometry.curve_loop import CurveLoop
-from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.transaction import MeshContext, GeoTransaction
-from ezmesh.geometry.plane_surface import PlaneSurface
-from ezmesh.geometry.point import Point
-from ezmesh.geometry.volume import Volume
-from ezmesh.utils.geometry import PropertyType, get_property
+from ezmesh.geometry.transaction import Context, GeoTransaction
+from ezmesh.geometry.transactions.edge import Edge
+from ezmesh.geometry.transactions.plane_surface import PlaneSurface
+from ezmesh.geometry.transactions.point import Point
+from ezmesh.geometry.transactions.volume import Volume
 from ezmesh.utils.types import Number
 
 @dataclass
@@ -30,7 +28,7 @@ class ExtrudedBoundaryLayer(GeoTransaction):
     def __post_init__(self):
         self.tag = None
         
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         if self.tag is None:
             heights = [self.hwall_n]
             for i in range(1, self.num_layers): 
@@ -47,7 +45,7 @@ class ExtrudedBoundaryLayer(GeoTransaction):
             bnd = gmsh.model.getBoundary(top)
             self.tag = gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
 
-    def after_sync(self, ctx: MeshContext):
+    def after_sync(self, ctx: Context):
         ...
 
 
@@ -80,10 +78,10 @@ class BoundaryLayerField(GeoTransaction):
     def __post_init__(self):
         self.tag = None
 
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         super().before_sync(ctx)
 
-    def after_sync(self, ctx: MeshContext):
+    def after_sync(self, ctx: Context):
         if not self.tag:
             self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
             edge_tags = [edge.tag for edge in self.edges]
@@ -111,27 +109,27 @@ class TransfiniteCurveField(GeoTransaction):
     edges: Sequence[Edge]
     "edges to be added to the boundary layer"
 
-    node_counts: PropertyType[int]
+    node_counts: Sequence[int]
     "number per curve"
 
-    mesh_types: Optional[PropertyType[str]] = None
+    mesh_types: Optional[Sequence[str]] = None
     "mesh type for each curve"
 
-    coefs: Optional[PropertyType[float]] = None
+    coefs: Optional[Sequence[float]] = None
     "coefficients for each curve"
 
     def __post_init__(self):
         self.is_run = False
 
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         super().before_sync(ctx)
 
-    def after_sync(self, ctx: MeshContext):
+    def after_sync(self, ctx: Context):
         if not self.is_run:
             for i, edge in enumerate(self.edges):
                 gmsh.model.mesh.setTransfiniteCurve(
                     edge.tag,
-                    numNodes=cast(Number, get_property(self.node_counts, i, edge.label))+1,
+                    numNodes=self.node_counts[i]+1,
                     # meshType=get_property(self.mesh_types, i, edge.label, "Progression"),
                     # coef=get_property(self.coefs, i, edge.label, 1.0)
                 )
@@ -157,32 +155,14 @@ class TransfiniteSurfaceField(GeoTransaction):
         self.surfaces = [self.surfaces] if isinstance(self.surfaces, PlaneSurface) else self.surfaces
         self.is_run = False
 
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         super().before_sync(ctx)
 
-    def after_sync(self, ctx: MeshContext):      
+    def after_sync(self, ctx: Context):      
         if not self.is_run:
             corner_tags = [cast(int, corner.tag) for corner in self.corners]
             for surface in cast(Sequence[PlaneSurface], self.surfaces):
                 gmsh.model.mesh.setTransfiniteSurface(surface.tag, self.arrangement, corner_tags)
-
-    # @staticmethod
-    # def from_labels(surface: PlaneSurface, labels: tuple[str,str], curve_loop: Optional[CurveLoop] = None, arrangement: str = "Left"):
-    #     "create transfinite surface from edges"
-        
-    #     # use primary curve loop of surface if curve loop is not defined
-    #     if curve_loop is None:
-    #         curve_loop = surface.curve_loops[0]
-
-    #     first_corner_group, second_corner_group = labels
-    #     corners = [
-    #         curve_loop.edge_groups[first_corner_group][0].start, 
-    #         curve_loop.edge_groups[first_corner_group][-1].end,
-    #         curve_loop.edge_groups[second_corner_group][0].start, 
-    #         curve_loop.edge_groups[second_corner_group][-1].end
-    #     ]
-
-    #     return TransfiniteSurfaceField(surface, corners, arrangement)
 
 @dataclass
 class TransfiniteVolumeField(GeoTransaction):
@@ -196,10 +176,10 @@ class TransfiniteVolumeField(GeoTransaction):
         self.is_run = False
         self.volumes = [self.volumes] if isinstance(self.volumes, Volume) else self.volumes
 
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         super().before_sync(ctx)
 
-    def after_sync(self, ctx: MeshContext):      
+    def after_sync(self, ctx: Context):      
         if not self.is_run:
             for volume in cast(Sequence[Volume], self.volumes):
                 gmsh.model.mesh.setTransfiniteVolume(volume.tag)

@@ -2,11 +2,10 @@
 from dataclasses import dataclass
 from typing import Optional, Sequence, cast
 import gmsh
-from ezmesh.geometry.plane_surface import PlaneSurface
-from ezmesh.utils.types import DimType
-from ezmesh.geometry.edge import Edge
-from ezmesh.geometry.transaction import MeshContext, GeoEntity
-from ezmesh.geometry.surface_loop import SurfaceLoop
+from ezmesh.geometry.transactions.plane_surface import PlaneSurface
+from ezmesh.geometry.transactions.edge import Edge
+from ezmesh.geometry.transaction import Context, DimType, GeoEntity
+from ezmesh.geometry.transactions.surface_loop import SurfaceLoop
 
 @dataclass
 class Volume(GeoEntity):
@@ -22,12 +21,12 @@ class Volume(GeoEntity):
     def __post_init__(self):
         self.type = DimType.VOLUME
 
-    def before_sync(self, ctx: MeshContext):
+    def before_sync(self, ctx: Context):
         surface_loop_tags = [surface_loop.before_sync(ctx) for surface_loop in self.surface_loops]
         self.tag = self.tag or gmsh.model.geo.addVolume(surface_loop_tags)
         return self.tag
 
-    def after_sync(self, ctx: MeshContext):
+    def after_sync(self, ctx: Context):
         for surface_loop in self.surface_loops:
             surface_loop.after_sync(ctx)
 
@@ -53,7 +52,7 @@ class Volume(GeoEntity):
         return surfaces
 
     @staticmethod
-    def from_tag(tag: int, ctx: MeshContext):
+    def from_tag(tag: int, ctx: Context):
         surface_loops = []
         surface_loop_tags, surface_tags = gmsh.model.occ.get_surface_loops(tag)
 

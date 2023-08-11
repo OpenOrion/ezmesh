@@ -1,5 +1,4 @@
 
-from ezmesh.utils.types import DimType
 from ezmesh.utils.types import NumpyFloat
 from .mesh import ElementType, Mesh
 import numpy.typing as npt
@@ -21,8 +20,6 @@ def import_from_su2(file_path: str):
         for marker_label, su2_marker_element_types in zone.marker_types.items():
             marker_types[marker_label] = [ElementType[su2_marker_element_type.name] for su2_marker_element_type in su2_marker_element_types]
         
-
-
         mesh = Mesh(
             zone.ndime,
             zone.elements,

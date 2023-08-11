@@ -1,19 +1,13 @@
-from typing import Optional, Sequence, Type, Union, cast
+from typing import Optional, Sequence, Type, Union
 import cadquery as cq
 import numpy as np
 import gmsh
-from ezmesh.geometry.curve_loop import CurveLoop, get_lines
-from ezmesh.geometry.edge import Curve, Line
-from ezmesh.geometry.plane_surface import PlaneSurface
-from ezmesh.geometry.plot import add_plot
-from ezmesh.geometry.point import Point
-from ezmesh.geometry.surface_loop import SurfaceLoop
-from ezmesh.geometry.transaction import GeoEntity, MeshContext, normalize_coord
-from ezmesh.geometry.volume import Volume
-from cadquery import Face, Selector
+from ezmesh.geometry.transactions import Point, Curve, Line, CurveLoop, PlaneSurface, SurfaceLoop, Volume
+from ezmesh.geometry.transaction import DimType, GeoEntity, Context
+from cadquery import Selector
 from cadquery.selectors import AndSelector, StringSyntaxSelector
 from cadquery.cq import CQObject
-from ezmesh.utils.types import DimType, NumpyFloat
+from ezmesh.utils.geometry import normalize_coord
 
 CQObject3D =  (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)
 CQObject2D =  (cq.occ_impl.shapes.Face, cq.occ_impl.shapes.Wire)
@@ -111,7 +105,7 @@ def get_entity_id(target: Union[CQObject, GeoEntity]):
             vector_id = normalize_coord(gmsh.model.occ.getCenterOfMass(target.type.value, target.tag))
         return (target.type, vector_id)
 
-def select_entities(cq_objects: Sequence[CQObject], ctx: MeshContext):
+def select_entities(cq_objects: Sequence[CQObject], ctx: Context):
     entities = []
     for cq_object in cq_objects:
         if isinstance(cq_object, cq.occ_impl.shapes.Wire):
@@ -125,7 +119,7 @@ def select_entities(cq_objects: Sequence[CQObject], ctx: MeshContext):
 
 def initialize_entities_2d(
     target: Union[cq.Workplane, Sequence[CQObject]],
-    ctx: MeshContext,
+    ctx: Context,
     mesh_size: float = 0,  
     samples_per_spline: int = 20
 ):
@@ -166,7 +160,7 @@ def initialize_entities_2d(
 
 def initialize_entities_3d(
     target: Union[cq.Workplane, Sequence[CQObject]],
-    ctx: MeshContext,
+    ctx: Context,
     mesh_size: float = 0.1, 
     samples_per_spline: int = 20
 ):
@@ -182,7 +176,7 @@ def initialize_entities_3d(
     return volumes
 
 
-def initialize_context(workplane: cq.Workplane, ctx: MeshContext):
+def initialize_context(workplane: cq.Workplane, ctx: Context):
     if ctx.dimension == 2:
         initialize_entities_2d(workplane, ctx)
     else:
@@ -206,7 +200,7 @@ def initialize_context(workplane: cq.Workplane, ctx: MeshContext):
             ctx.register[get_entity_id(point)] = point
     return ctx
 
-def intialize_workplane(workplane: cq.Workplane, ctx: MeshContext):
+def intialize_workplane(workplane: cq.Workplane, ctx: Context):
 
     cq_objects = [
         *workplane.faces().vals(), 

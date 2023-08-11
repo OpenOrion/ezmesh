@@ -1,4 +1,2 @@
-from ezmesh.mesh import Mesh, ElementType
-from ezmesh.importers import import_from_file
-from ezmesh.visualizer import visualize_mesh
+from ezmesh.mesh import *
 from ezmesh.geometry import *

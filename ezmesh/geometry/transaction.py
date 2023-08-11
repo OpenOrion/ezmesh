@@ -1,30 +1,23 @@
 from dataclasses import field
 import gmsh
+from enum import Enum
+from typing import Optional, Sequence, Union
 import numpy as np
-from typing import Iterable, Optional, Protocol, Sequence
-from ezmesh.utils.types import DimType
+from ezmesh.utils.geometry import normalize_coord
 from ezmesh.utils.types import Number, NumpyFloat
 
-def normalize_coord(iterable: Iterable[Number], round_by: Optional[int] = 5) -> tuple[float, float, float]:
-    return tuple(
-        round(float(num), round_by) if round_by 
-        else num
-        for num in iterable # type: ignore
-    )
 
+class DimType(Enum):
+    POINT = 0
+    CURVE = 1
+    SURFACE = 2
+    VOLUME = 3
+    CURVE_LOOP = 10
+    
 GeoEntityId = tuple[DimType, tuple[float, float, float]]
 
 
-def get_unique_edges(lst):
-    unique_entries = set()
-
-    for entry in lst:
-        sorted_entry = tuple(sorted(entry))
-        unique_entries.add(sorted_entry)
-
-    return np.array([list(entry) for entry in unique_entries])
-
-class MeshContext:
+class Context:
     point_tags: dict[tuple[Number, Number, Number], int]
     edge_tags: dict[tuple[int, int], int]
     points: dict[int, "GeoEntity"]
@@ -77,24 +70,21 @@ class MeshContext:
         node_tags, node_concatted, _ = gmsh.model.mesh.getNodes()
         node_coords = np.array(node_concatted, dtype=NumpyFloat).reshape((-1, 3))
 
-        from ezmesh.geometry.point import Point
+        from ezmesh.geometry.transactions.point import Point
         for i, point_coord in enumerate(node_coords):
             self.add_point(Point(point_coord, tag=node_tags[i]))
 
-
-
-
-class GeoTransaction(Protocol):
-    def before_sync(self, ctx: MeshContext):
+class GeoTransaction:
+    def before_sync(self, ctx: Context):
         "completes transaction before syncronization and returns tag."
         ...
 
-    def after_sync(self, ctx: MeshContext):
+    def after_sync(self, ctx: Context):
         "completes transaction after syncronization and returns tag."
         ...
 
 
-class GeoEntity(GeoTransaction, Protocol):
+class GeoEntity(GeoTransaction):
     tag: Optional[int] = None
     "tag of entity"
 
@@ -107,11 +97,22 @@ class GeoEntity(GeoTransaction, Protocol):
     fields: Sequence = field(default_factory=list)
     "fields to be added to the surface"
 
-    def before_sync(self, ctx: MeshContext) -> int:
-        ...
-
     def set_label(self, label: str):
         self.label = label
 
     def __eq__(self, __value: "GeoEntity") -> bool:
         return (self.type, self.tag) == (__value.type, __value.tag)
+    
+
+def commit_transactions(transactions: Union[GeoTransaction, Sequence[GeoTransaction]], ctx: Context = Context()):
+    if isinstance(transactions, Sequence):
+        for transaction in transactions:
+            transaction.before_sync(ctx)
+    else:
+        transactions.before_sync(ctx)
+    gmsh.model.geo.synchronize()
+    if isinstance(transactions, Sequence):
+        for transaction in transactions:
+            transaction.after_sync(ctx)
+    else:
+        transactions.after_sync(ctx)
