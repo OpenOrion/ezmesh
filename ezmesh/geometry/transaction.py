@@ -5,8 +5,12 @@ from typing import Iterable, Optional, Protocol, Sequence
 from ezmesh.utils.types import DimType
 from ezmesh.utils.types import Number, NumpyFloat
 
-def format_coord_id(iterable: Iterable[Number], round_by: Optional[int] = 5):
-    return tuple(round(float(num), round_by) if round_by else float(num)  for num in iterable)
+def normalize_coord(iterable: Iterable[Number], round_by: Optional[int] = 5) -> tuple[float, float, float]:
+    return tuple(
+        round(float(num), round_by) if round_by 
+        else num
+        for num in iterable # type: ignore
+    )
 
 GeoEntityId = tuple[DimType, tuple[float, float, float]]
 
@@ -45,7 +49,7 @@ class MeshContext:
         self.edge_tags[(edge.start.tag, edge.end.tag)] = edge.tag
 
     def add_point(self, point):
-        self.point_tags[format_coord_id(point.coord, round_by=None)] = point.tag
+        self.point_tags[normalize_coord(point.coord, round_by=None)] = point.tag
         self.points[point.tag] = point
 
     def get_physical_groups(self, type: DimType):

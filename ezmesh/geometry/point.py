@@ -4,7 +4,7 @@ import gmsh
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import GeoEntityId, GeoEntity, MeshContext, format_coord_id
+from ezmesh.geometry.transaction import GeoEntityId, GeoEntity, MeshContext, normalize_coord
 from ezmesh.utils.types import Number, NumpyFloat
 
 CoordType = Union[npt.NDArray[NumpyFloat], tuple[Number, Number], tuple[Number, Number, Number], list[Number]]
@@ -37,7 +37,7 @@ class Point(GeoEntity):
             gmsh.model.geo.mesh.setSize([(self.type.value, self.tag)], self.mesh_size)
             
     def before_sync(self, ctx: MeshContext):
-        pnt_key = format_coord_id(self.coord, round_by=None)
+        pnt_key = normalize_coord(self.coord, round_by=None)
 
         if pnt_key in ctx.point_tags:
             self.tag = ctx.point_tags[pnt_key]

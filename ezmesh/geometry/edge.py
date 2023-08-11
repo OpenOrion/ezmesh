@@ -9,6 +9,7 @@ from ezmesh.geometry.transaction import MeshContext, GeoEntity
 from ezmesh.geometry.point import Point
 from ezmesh.utils.geometry import get_sampling
 from ezmesh.utils.types import NumpyFloat
+from scipy.interpolate import splprep
 
 def unit_vector(vector: npt.NDArray[NumpyFloat]) -> npt.NDArray[NumpyFloat]:
     """ Returns the unit vector of the vector.  """
@@ -128,3 +129,14 @@ class Curve(Edge):
         return self.tag
     
 
+    def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
+
+        return self.ctrl_pnts
+        # point_coords = np.array([point.coord for point in self.ctrl_pnts])
+        # x = point_coords[:,0]
+        # y = point_coords[:,1]
+        # z = point_coords[:,2]
+
+        # xnew = np.linspace(x.min(), y.max(), num_pnts)  
+
+        # power_smooth = splprep(point_coords[0], point_coords[1], xnew)

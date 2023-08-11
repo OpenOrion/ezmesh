@@ -1,66 +1,90 @@
-from typing import Sequence, Type, Union, cast
+from typing import Optional, Sequence, Type, Union, cast
 import cadquery as cq
 import numpy as np
 import gmsh
-from ezmesh.geometry.curve_loop import CurveLoop
+from ezmesh.geometry.curve_loop import CurveLoop, get_lines
 from ezmesh.geometry.edge import Curve, Line
 from ezmesh.geometry.plane_surface import PlaneSurface
+from ezmesh.geometry.plot import add_plot
 from ezmesh.geometry.point import Point
 from ezmesh.geometry.surface_loop import SurfaceLoop
-from ezmesh.geometry.transaction import GeoEntity, MeshContext, format_coord_id
+from ezmesh.geometry.transaction import GeoEntity, MeshContext, normalize_coord
 from ezmesh.geometry.volume import Volume
 from cadquery import Face, Selector
-from cadquery.selectors import AreaNthSelector, StringSyntaxSelector
+from cadquery.selectors import AndSelector, StringSyntaxSelector
 from cadquery.cq import CQObject
-from ezmesh.utils.geometry import commit_transactions
-from ezmesh.utils.types import DimType
+from ezmesh.utils.types import DimType, NumpyFloat
 
-def is_interior_face(face: Face):
-    # Get the normal of the face
-    face_normal = face.normalAt()
+CQObject3D =  (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)
+CQObject2D =  (cq.occ_impl.shapes.Face, cq.occ_impl.shapes.Wire)
 
-    # Calculate the centroid of the face
-    face_centroid = face.Center()
-
-    # Calculate the dot product between the face normal and a vector from the centroid to an arbitrary point
-    # inside the mesh (e.g., (0, 0, 0))
+def get_interior_face(object: cq.occ_impl.shapes.Face):
+    face_normal = object.normalAt()
+    face_centroid = object.Center()
     interior_dot_product = face_normal.dot(face_centroid)
-
     return interior_dot_product < 0
+
+def get_interior_edges(
+    object: Union[cq.occ_impl.shapes.Face, cq.occ_impl.shapes.Wire], 
+    parent_object: cq.occ_impl.shapes.Face,
+    is_interior: bool
+):
+    wires = parent_object.innerWires() if is_interior else [parent_object.outerWire()]
+    if isinstance(object, cq.occ_impl.shapes.Wire): 
+        return wires
+    elif isinstance(object, cq.occ_impl.shapes.Edge):
+        return [edge for  wire in wires for edge in wire.Edges()]
+
+class InteriorSelector(Selector):
+    def __init__(self, workplane: cq.Workplane, is_interior: bool = True):
+        self.workplane = workplane
+        self.is_interior = is_interior
+    def filter(self, objectList):
+        parent_objects = self.workplane.vals()
+        if len(parent_objects) == 1 and isinstance(parent_objects[0], cq.occ_impl.shapes.Face): 
+            return get_interior_edges(objectList[0], parent_objects[0], self.is_interior)
+        return filter(lambda object: self.is_interior == get_interior_face(object), objectList)
+
+def get_selector(workplane: cq.Workplane, selector: Union[Selector, str, None], is_interior: Optional[bool] = None):
+    selectors = []
+    if isinstance(selector, str):
+        selector = selectors.append(StringSyntaxSelector(selector))
+    elif isinstance(selector, Selector):
+        selectors.append(selector)
+
+    if is_interior is not None:
+        selectors.append(InteriorSelector(workplane, is_interior))
+
+    if len(selectors) > 0:
+        prev_selector = selectors[0]
+        for selector in selectors[1:]:
+            prev_selector = AndSelector(prev_selector, selector)
+        return prev_selector
 
 def norm(vec: cq.Vector):
     if vec == cq.Vector(0,0,0):
         return vec
     return vec.normalized()
 
-def get_selector(selector: Union[Selector, str, None] = None, index: int | None = None):
-    assert not (index is not None and selector is not None), "cannot use both index and selector"
-    if index is not None:
-        selector = AreaNthSelector(index)    
-    elif isinstance(selector, str):
-        selector = StringSyntaxSelector(selector)
-
-    return selector
-
 def get_cq_objects_as_type(workplane: cq.Workplane, type: Type):
     vals = []
     for val in workplane.vals():
-        if isinstance(val, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
-            if type in (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid):
-                vals.append(val)
-            elif type == cq.occ_impl.shapes.Face:
-                vals += val.Faces()
-            elif type == cq.occ_impl.shapes.Edge:
-                vals += val.Edges()
-        else:
-            assert isinstance(val, type), "non compound/solid tags must be of the same type as current workplane"
+        if isinstance(val, type):
             vals.append(val)
+        elif type == cq.occ_impl.shapes.Face:
+            vals += val.Faces()
+        elif type == cq.occ_impl.shapes.Wire:
+            vals += val.Wires()
+        elif type == cq.occ_impl.shapes.Edge:
+            vals += val.Edges()
+        elif type == cq.occ_impl.shapes.Vertex:
+            vals += val.Vertices()
 
     return vals
 
 def get_entity_id(target: Union[CQObject, GeoEntity]):
     if isinstance(target, CQObject):
-        if isinstance(target, (cq.occ_impl.shapes.Compound, cq.occ_impl.shapes.Solid)):
+        if isinstance(target, CQObject3D):
             type = DimType.VOLUME
         elif isinstance(target, cq.occ_impl.shapes.Face):
             type = DimType.SURFACE
@@ -74,22 +98,22 @@ def get_entity_id(target: Union[CQObject, GeoEntity]):
             raise ValueError(f"cannot get id for {target}")
 
         if isinstance(target, cq.occ_impl.shapes.Vertex):
-            vector_id = format_coord_id((target.X, target.Y, target.Z))
+            vector_id = normalize_coord((target.X, target.Y, target.Z))
         elif isinstance(target, cq.occ_impl.shapes.Wire):
-            vector_id = format_coord_id(np.average([edge.centerOfMass(target).toTuple() for edge in target.Edges()], axis=0))
+            vector_id = normalize_coord(np.average([edge.centerOfMass(target).toTuple() for edge in target.Edges()], axis=0))
         else:
-            vector_id =  format_coord_id(target.centerOfMass(target).toTuple())
+            vector_id =  normalize_coord(target.centerOfMass(target).toTuple())
         return (type, vector_id)
     else:
         if isinstance(target, Point):
-            vector_id = format_coord_id(target.coord)
+            vector_id = normalize_coord(target.coord)
         else:
-            vector_id = format_coord_id(gmsh.model.occ.getCenterOfMass(target.type.value, target.tag))
+            vector_id = normalize_coord(gmsh.model.occ.getCenterOfMass(target.type.value, target.tag))
         return (target.type, vector_id)
 
-def select_entities(workplane: cq.Workplane, ctx: MeshContext):
+def select_entities(cq_objects: Sequence[CQObject], ctx: MeshContext):
     entities = []
-    for cq_object in workplane.vals():
+    for cq_object in cq_objects:
         if isinstance(cq_object, cq.occ_impl.shapes.Wire):
             for edge in cq_object.Edges():
                 id = get_entity_id(edge)
@@ -102,14 +126,14 @@ def select_entities(workplane: cq.Workplane, ctx: MeshContext):
 def initialize_entities_2d(
     target: Union[cq.Workplane, Sequence[CQObject]],
     ctx: MeshContext,
-    normalize: bool = False,
-    mesh_size: float = 0.1,  
+    mesh_size: float = 0,  
     samples_per_spline: int = 20
 ):
     surfaces: list[PlaneSurface] = []
     faces = target if isinstance(target, Sequence) else target.vals()
 
     for face in faces:
+        assert isinstance(face, cq.occ_impl.shapes.Face), "target must be a face"
         curve_loops: list[CurveLoop] = []
         for wire in [face.outerWire(), *face.innerWires()]:
             edge_entities = []
@@ -120,20 +144,21 @@ def initialize_entities_2d(
 
                 is_line = norm(first - last) == norm(first - middle)
                 if is_line:
-                    edge_entity = Line(Point(first.toTuple(), mesh_size), Point(last.toTuple(), mesh_size))
+                    line = Line(Point(normalize_coord(first.toTuple()), mesh_size), Point(normalize_coord(last.toTuple()), mesh_size))
                 else:
-                    points = [Point(vec.toTuple(), mesh_size) for vec in edge.positions(np.linspace(0, 1, samples_per_spline))]
-                    edge_entity = Curve(points, "Spline")
+                    edges_points = edge.positions(np.linspace(0, 1, samples_per_spline, endpoint=True))
+                    points = [Point(normalize_coord(vec.toTuple()), mesh_size) for vec in edges_points]
+                    points.append(points[0])
+                    line = Curve(points, "Spline")
                 
-                ctx.register[get_entity_id(edge)] = edge_entity
-                for point in edge_entity.get_points():
-                    if normalize:
-                        point.z = 0
-                    ctx.register[get_entity_id(point)] = point
+                ctx.register[get_entity_id(edge)] = line
+                for point in line.get_points():
+                    point_id = get_entity_id(point)
+                    ctx.register[point_id] = point
                 
-                edge_entities.append(edge_entity)
-            curve_loop = CurveLoop(edge_entities)
-            curve_loops.append(curve_loop)
+                    edge_entities.append(line)
+                curve_loop = CurveLoop(edge_entities)
+                curve_loops.append(curve_loop)
         surface = PlaneSurface(curve_loops)
         ctx.register[get_entity_id(face)] = surface
         surfaces.append(surface)
@@ -148,6 +173,7 @@ def initialize_entities_3d(
     volumes = []
     solids = target if isinstance(target, Sequence) else target.vals()
     for solid in solids:
+        assert isinstance(solid, CQObject3D), "target must be a solid or compound"
         surfaces = initialize_entities_2d(solid.Faces(), ctx, mesh_size, samples_per_spline)
         surface_loop = SurfaceLoop(surfaces)
         volume = Volume([surface_loop])
@@ -156,12 +182,10 @@ def initialize_entities_3d(
     return volumes
 
 
-def initialize_context(workplane: cq.Workplane):
-    if isinstance(workplane.vals()[0], cq.occ_impl.shapes.Face):
-        ctx = MeshContext(2)
-        initialize_entities_2d(workplane, ctx, normalize=True)
+def initialize_context(workplane: cq.Workplane, ctx: MeshContext):
+    if ctx.dimension == 2:
+        initialize_entities_2d(workplane, ctx)
     else:
-        ctx = MeshContext(3)
         file_path = "workplane.step"
         cq.exporters.export(workplane, file_path)
 
@@ -183,7 +207,7 @@ def initialize_context(workplane: cq.Workplane):
     return ctx
 
 def intialize_workplane(workplane: cq.Workplane, ctx: MeshContext):
-    # Add all surfaces, edges and vertices to the workplane
+
     cq_objects = [
         *workplane.faces().vals(), 
         *workplane.edges().vals(), 

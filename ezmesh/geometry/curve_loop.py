@@ -4,7 +4,7 @@ from typing import Optional, Sequence, Union, cast
 import numpy as np
 import numpy.typing as npt
 from ezmesh.utils.types import DimType
-from ezmesh.geometry.transaction import GeoEntityId, MeshContext, GeoEntity, format_coord_id
+from ezmesh.geometry.transaction import GeoEntityId, MeshContext, GeoEntity, normalize_coord
 from ezmesh.geometry.edge import Curve, Edge, Line
 from ezmesh.geometry.point import Point
 from ezmesh.utils.types import NumpyFloat
@@ -27,8 +27,6 @@ class DirectedPath:
     @property
     def start(self):
         return self.edge.start if self.direction == 1 else self.edge.end
-
-bad_edges = []
 
 def get_sorted_paths(edges: Sequence[Edge]):
     sorted_paths = [DirectedPath(edges[0], 1)]
@@ -101,6 +99,9 @@ class CurveLoop(GeoEntity):
             sorted_path.direction*cast(int, sorted_path.edge.before_sync(ctx)) 
             for sorted_path in get_sorted_paths(self.edges)
         ]
+        # edge_tags = [
+        #     edge.before_sync(ctx) for edge in self.edges
+        # ]
         self.tag = self.tag or gmsh.model.geo.add_curve_loop(edge_tags)
         return self.tag
 

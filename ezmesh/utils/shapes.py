@@ -1,3 +1,5 @@
+from typing import Sequence
+from cadquery.cq import VectorLike
 import numpy as np
 
 def generate_circle(r, num_points=100):
@@ -6,7 +8,7 @@ def generate_circle(r, num_points=100):
     y = r * np.sin(theta)
     return np.column_stack((x, y))
 
-def generate_naca4_airfoil(naca_string: str, num_points: int = 100) -> np.ndarray:
+def generate_naca4_airfoil(naca_string: str, num_points: int = 100) -> Sequence[VectorLike]:
 
     """generates NACA4 coordinates
 
@@ -60,4 +62,4 @@ def generate_naca4_airfoil(naca_string: str, num_points: int = 100) -> np.ndarra
     x = np.concatenate((xu[1:-1], xl[::-1]))
     y = np.concatenate((yu[1:-1], yl[::-1]))
 
-    return np.column_stack((x, y))
+    return np.column_stack((x, y)) # type: ignore

@@ -11,7 +11,7 @@ import numpy as np
 from ezmesh.utils.types import NumpyFloat
 
 
-def add_plot(fig: go.Figure, coords: npt.NDArray[NumpyFloat], label: str):
+def add_plot(coords: npt.NDArray[NumpyFloat], fig: go.Figure=go.Figure(), label: str="Plot"):
     dim = 3 if np.all(coords[:,2]) else 2
     if dim == 3:
         fig.add_scatter3d(
@@ -30,6 +30,7 @@ def add_plot(fig: go.Figure, coords: npt.NDArray[NumpyFloat], label: str):
             mode="lines"
         )
 
+    return fig
 
 def plot_entities(
     entities: Union[GeoEntity, Sequence[GeoEntity]], 
@@ -75,12 +76,12 @@ def plot_entities(
     if isinstance(entities[0], Volume):
         for label, coord_group in surface_coord_groups.items():
             for surface_coords in coord_group:
-                add_plot(fig, surface_coords, label)
+                add_plot(surface_coords, fig, label)
 
     if isinstance(entities[0], (Edge, PlaneSurface)):
         for label, coord_group in edge_coord_groups.items():
             edge_coords = np.array(coord_group if len(coord_group) > 1 else coord_group[0], dtype=NumpyFloat)
-            add_plot(fig, edge_coords, label)
+            add_plot(edge_coords, fig, label)
 
 
     fig.layout.yaxis.scaleanchor = "x"  # type: ignore
