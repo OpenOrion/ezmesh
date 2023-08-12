@@ -35,15 +35,15 @@ class BoundaryLayer(GeoTransaction):
                 heights.append(heights[-1] + heights[0] * self.ratio**i)
             
             dimTags = [(target.type.value, target.tag) for target in self.targets]
-            extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
+            extruded_bnd_layer = gmsh.model.occ.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
 
             top = []
             for i in range(1, len(extruded_bnd_layer)):
                 if extruded_bnd_layer[i][0] == 3:
                     top.append(extruded_bnd_layer[i-1])
-            gmsh.model.geo.synchronize()
+            gmsh.model.occ.synchronize()
             bnd = gmsh.model.getBoundary(top)
-            self.tag = gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
+            self.tag = gmsh.model.occ.addCurveLoop([c[1] for c in bnd])
 
     def after_sync(self, ctx: Context):
         ...

@@ -67,8 +67,8 @@ class GeometryQL:
             self._workplane = target
         dim = 3 if isinstance(self._workplane.vals()[0], CQObject3D) else 2
 
-        if isinstance(self._workplane.vals()[0], cq.occ_impl.shapes.Wire):
-            self._workplane = self._workplane.extrude(0.001).faces(">Z")
+        if isinstance(self._workplane.vals()[0], cq.Wire):
+            self._workplane = self._workplane.extrude(0.001).faces("<Z")
         self._initial_workplane = self._workplane
 
         self._ctx = Context(dim)
@@ -138,14 +138,14 @@ class GeometryQL:
 
 
     def recombine(self, angle: float):
-        faces = get_cq_objects_as_type(self._workplane, cq.occ_impl.shapes.Face)
+        faces = cast(Sequence[cq.Face], get_cq_objects_as_type(self._workplane, cq.Face))
         surfaces = select_entities(faces, self._ctx)
         self._mesh_transactions += [Recombine(surface, angle) for surface in surfaces]
         # self.reset()
         return self
 
     def setMeshSize(self, mesh_size: Union[float, Callable[[Point], float]]):
-        vertices = get_cq_objects_as_type(self._workplane, cq.occ_impl.shapes.Vertex)
+        vertices = cast(Sequence[cq.Vertex],get_cq_objects_as_type(self._workplane, cq.Vertex))
         points = select_entities(vertices, self._ctx)
         for point in cast(Sequence[Point], points):
             if isinstance(mesh_size, Callable):

@@ -33,23 +33,23 @@ class Point(GeoEntity):
 
     def set_mesh_size(self, mesh_size: float):
         self.mesh_size = mesh_size
-        if self.tag is not None:
-            gmsh.model.geo.mesh.setSize([(self.type.value, self.tag)], self.mesh_size)
             
     def before_sync(self, ctx: Context):
-        pnt_key = norm_coord(self.coord, round_by=None)
+        pnt_key = norm_coord(self.coord)
 
         if pnt_key in ctx.point_tags:
             self.tag = ctx.point_tags[pnt_key]
         else:
-            self.tag = gmsh.model.geo.add_point(self.x, self.y, self.z, self.mesh_size)
+            self.tag = gmsh.model.occ.add_point(self.x, self.y, self.z, self.mesh_size)
             ctx.add_point(self)
+
+        gmsh.model.occ.mesh.setSize([(self.type.value, self.tag)], self.mesh_size)
 
         return self.tag
 
     def after_sync(self, ctx: Context):
-        return super().after_sync(ctx)
-    
+        ...
+
     @property
     def id(self):
         return (self.type, norm_coord(self.coord))

@@ -7,6 +7,7 @@ import numpy.typing as npt
 from ezmesh.geometry.transaction import Context, DimType, GeoEntity
 from ezmesh.geometry.transactions.point import Point
 from ezmesh.utils.geometry import get_sampling
+from ezmesh.utils.norm import norm_coord
 from ezmesh.utils.types import NumpyFloat
 
 def unit_vector(vector: npt.NDArray[NumpyFloat]) -> npt.NDArray[NumpyFloat]:
@@ -19,9 +20,6 @@ class Edge(GeoEntity):
 
     end: Point
     "ending point of edge"
-
-    def get_points(self):
-        return [self.start, self.end]
 
     def __init__(self):
         self.label = None
@@ -47,13 +45,13 @@ class Edge(GeoEntity):
 
     @staticmethod
     def from_tag(tag: int, ctx: Context):
-        if tag in ctx.edges:
-            return cast(Edge, ctx.edges[tag])
         edge = Edge()
         edge.tag = tag
+
         start_coord, end_coord = edge.get_coords(2)
-        edge.start = Point(start_coord)
-        edge.end = Point(end_coord)
+
+        edge.start = cast(Point, ctx.register[(DimType.POINT, norm_coord(start_coord))])
+        edge.end = cast(Point, ctx.register[(DimType.POINT, norm_coord(end_coord))])
         ctx.add_edge(edge)
         return edge
 
@@ -74,7 +72,7 @@ class Line(Edge):
         if (start_tag, end_tag) in ctx.edge_tags:
             self.tag = ctx.edge_tags[(start_tag, end_tag)]
         else:
-            self.tag = self.tag or gmsh.model.geo.add_line(start_tag, end_tag)
+            self.tag = self.tag or gmsh.model.occ.add_line(start_tag, end_tag)
             ctx.add_edge(self)
           
         return self.tag
@@ -101,9 +99,6 @@ class Curve(Edge):
     def end(self):
         return self.ctrl_pnts[-1]
 
-    def get_points(self):
-        return self.ctrl_pnts
-
     def before_sync(self, ctx: Context):
         ctx.add_edge(self)
         ctrl_pnt_tags = [ctrl_point.before_sync(ctx) for ctrl_point in self.ctrl_pnts]
@@ -116,11 +111,11 @@ class Curve(Edge):
         else:
             if self.tag is None:
                 if self.type == "BSpline":
-                    self.tag = gmsh.model.geo.add_bspline(ctrl_pnt_tags)
+                    self.tag = gmsh.model.occ.add_bspline(ctrl_pnt_tags)
                 elif self.type == "Spline":
-                    self.tag = gmsh.model.geo.add_spline(ctrl_pnt_tags)
+                    self.tag = gmsh.model.occ.add_spline(ctrl_pnt_tags)
                 elif self.type == "Bezier":
-                    self.tag = gmsh.model.geo.add_bezier(ctrl_pnt_tags)
+                    self.tag = gmsh.model.occ.add_bezier(ctrl_pnt_tags)
                 else:
                     raise ValueError(f"Curve type {self.type} not specified")
             ctx.add_edge(self)

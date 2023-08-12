@@ -71,7 +71,7 @@ class CurveLoop(GeoEntity):
             sorted_path.direction*cast(int, sorted_path.edge.before_sync(ctx)) 
             for sorted_path in get_sorted_paths(self.edges)
         ]
-        self.tag = self.tag or gmsh.model.geo.add_curve_loop(edge_tags)
+        self.tag = self.tag or gmsh.model.occ.add_curve_loop(edge_tags)
         return self.tag
 
     def after_sync(self, ctx: Context):

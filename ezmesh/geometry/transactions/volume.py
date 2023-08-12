@@ -24,15 +24,15 @@ class Volume(GeoEntity):
 
     def before_sync(self, ctx: Context):
         surface_loop_tags = [surface_loop.before_sync(ctx) for surface_loop in self.surface_loops]
-        self.tag = self.tag or gmsh.model.geo.addVolume(surface_loop_tags)
-        ctx.add_volume(self)
+        self.tag = self.tag or gmsh.model.occ.addVolume(surface_loop_tags)
         return self.tag
 
     def after_sync(self, ctx: Context):
         for surface_loop in self.surface_loops:
             surface_loop.after_sync(ctx)
-        set_physical_groups(ctx)
-    
+        set_physical_groups(ctx, [*self.get_edges(), *self.get_surfaces()])
+
+
     def get_edges(self):
         edges: Sequence[Edge] = []
         for surface_loop in self.surface_loops:

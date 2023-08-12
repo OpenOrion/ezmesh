@@ -18,73 +18,22 @@ GeoEntityId = tuple[DimType, tuple[float, float, float]]
 
 
 class Context:
+    register: dict[GeoEntityId, "GeoEntity"]
     point_tags: dict[tuple[Number, Number, Number], int]
     edge_tags: dict[tuple[int, int], int]
-    points: dict[int, "GeoEntity"]
-    edges: dict[int, "GeoEntity"]
-    surfaces: dict[int, "GeoEntity"]
-    volumes: dict[int, "GeoEntity"]
-    register: dict[GeoEntityId, "GeoEntity"]
-    physical_groups: dict[tuple[DimType, str], int]
 
     def __init__(self, dimension: int = 3) -> None:
         self.dimension = dimension
         self.point_tags = {}
         self.edge_tags = {}
-        self.points = {}
-        self.edges = {}
-        self.surfaces = {}
-        self.volumes = {}
         self.register = {}
-        self.physical_groups = {}
-
-    def add_physical_group(self, type: DimType, tag: int, label: str):
-        self.physical_groups[(type, label)] = tag
-
-    def add_volume(self, volume):
-        self.volumes[volume.tag] = volume
-
-    def add_surface(self, surface):
-        self.surfaces[surface.tag] = surface
 
     def add_edge(self, edge):
-        self.edges[edge.tag] = edge
         self.edge_tags[(edge.start.tag, edge.end.tag)] = edge.tag
 
     def add_point(self, point):
-        self.point_tags[norm_coord(point.coord, round_by=None)] = point.tag
-        self.points[point.tag] = point
+        self.point_tags[norm_coord(point.coord)] = point.tag
 
-    def get_label_groups(self, type: DimType):
-        if type == DimType.POINT:
-            entities = self.points
-        elif type == DimType.CURVE:
-            entities = self.edges
-        elif type == DimType.SURFACE:
-            entities = self.surfaces
-        else:
-            raise ValueError(f"Invalid type: {type}")
-        physical_groups: dict[str, list[GeoEntity]] = {}
-        for entity in entities.values():
-            if not entity.label or not entity.tag:
-                continue
-            if entity.label not in physical_groups:
-                physical_groups[entity.label] = []
-            physical_groups[entity.label].append(entity)
-        return physical_groups
-
-    def update(self):
-        gmsh.model.mesh.generate(1)
-
-        node_tags, node_concatted, _ = gmsh.model.mesh.getNodes()
-        node_coords = np.array(node_concatted, dtype=NumpyFloat).reshape((-1, 3))
-
-        from ezmesh.geometry.transactions.point import Point
-        for i, point_coord in enumerate(node_coords):
-            point = Point(point_coord, tag=node_tags[i])
-            self.add_point(point)
-            self.register[point.id] = point
-        
 
 
 class GeoTransaction:
@@ -127,7 +76,13 @@ class GeoEntity(GeoTransaction):
 def commit_geo_transactions(transactions: Sequence[GeoTransaction], ctx: Context):
     for transaction in transactions:
         transaction.before_sync(ctx)
-    gmsh.model.geo.synchronize()
+    # for point in ctx.points.values():
+    #     point.before_sync(ctx)    
+    gmsh.model.occ.synchronize()
+
     for transaction in transactions:
         transaction.after_sync(ctx)
         transaction.is_commited = True
+    # for point in ctx.points.values():
+    #     point.after_sync(ctx)
+

@@ -4,20 +4,13 @@ from typing import Optional, Sequence, cast
 from ezmesh.geometry.transaction import Context, DimType, GeoEntity
 from ezmesh.geometry.transactions.curve_loop import CurveLoop
 from ezmesh.geometry.transactions.edge import Edge
+from ezmesh.utils.geometry import get_physical_group_tags
 
-def set_physical_groups(ctx: Context):
-    for (label, edges) in ctx.get_label_groups(DimType.CURVE).items():
-        if (DimType.CURVE.value, label) not in ctx.physical_groups:
-            edge_tags = [edge.tag for edge in edges]
-            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.CURVE.value, edge_tags)
-            gmsh.model.set_physical_name(DimType.CURVE.value, physical_group_tag, label)
 
-    for (label, surfaces) in ctx.get_label_groups(DimType.SURFACE).items():
-        if (DimType.SURFACE.value, label) not in ctx.physical_groups:
-            surface_tags = [edge.tag for edge in surfaces]
-            physical_group_tag = gmsh.model.addPhysicalGroup(DimType.SURFACE.value, surface_tags)
-            gmsh.model.set_physical_name(DimType.SURFACE.value, physical_group_tag, label)
-
+def set_physical_groups(ctx: Context, entities: Sequence[GeoEntity]):
+    for ((dim_type, label), group_tags) in get_physical_group_tags(entities).items():
+        physical_group_tag = gmsh.model.addPhysicalGroup(dim_type.value, group_tags)
+        gmsh.model.set_physical_name(dim_type.value, physical_group_tag, label)
 
 
 @dataclass
@@ -36,8 +29,7 @@ class PlaneSurface(GeoEntity):
 
     def before_sync(self, ctx: Context):
         curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]
-        self.tag = self.tag or gmsh.model.geo.add_plane_surface(curve_loop_tags)
-        ctx.add_surface(self)
+        self.tag = self.tag or gmsh.model.occ.add_plane_surface(curve_loop_tags)
         return self.tag
 
     def after_sync(self, ctx: Context):
@@ -46,7 +38,7 @@ class PlaneSurface(GeoEntity):
 
         # Assume that the PlaneSurface is the top-level
         if ctx.dimension == 2:
-            set_physical_groups(ctx)
+            set_physical_groups(ctx, [*self.get_edges(), self])
 
     def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
         for curve_loop in self.curve_loops:
