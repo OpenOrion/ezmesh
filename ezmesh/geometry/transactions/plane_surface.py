@@ -37,11 +37,8 @@ class PlaneSurface(GeoEntity):
 
         # Assume that the PlaneSurface is the top-level
         if ctx.dimension == 2:
-            set_physical_groups(ctx, [*self.get_curves(), self])
+            set_physical_groups(ctx, [*self.curves, self])
 
-    def get_coords(self, num_pnts: int = 20, is_cosine_sampling: bool = False):
-        for curve_loop in self.curve_loops:
-            yield curve_loop.get_coords(num_pnts, is_cosine_sampling)
-
-    def get_curves(self):
+    @property
+    def curves(self):
         return [curve for curve_loop in self.curve_loops for curve in curve_loop.curves]

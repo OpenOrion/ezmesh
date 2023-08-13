@@ -184,7 +184,7 @@ class GeometryQL:
             visualize_mesh(self._mesh)
         elif type == "plot":
             entities = self.vals()
-            plot_entities(entities)
+            plot_entities(list(entities))
         else:
             show(self._workplane)
         return self

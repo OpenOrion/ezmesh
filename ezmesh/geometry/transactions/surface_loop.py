@@ -29,4 +29,4 @@ class SurfaceLoop(GeoEntity):
             surface.after_sync(ctx)
 
     def get_curves(self):
-        return [curve for surface in self.surfaces for curve in surface.get_curves()]
+        return [curve for surface in self.surfaces for curve in surface.curves]

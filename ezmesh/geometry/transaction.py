@@ -4,7 +4,8 @@ from enum import Enum
 from typing import Optional, Sequence, cast
 import numpy as np
 from ezmesh.utils.norm import norm_coord
-from ezmesh.utils.types import Number, NumpyFloat
+from ezmesh.utils.shapes import get_sampling
+from ezmesh.utils.types import NumpyFloat
 
 
 class DimType(Enum):

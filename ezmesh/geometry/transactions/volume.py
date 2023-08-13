@@ -31,16 +31,17 @@ class Volume(GeoEntity):
     def after_sync(self, ctx: GeoContext):
         for surface_loop in self.surface_loops:
             surface_loop.after_sync(ctx)
-        set_physical_groups(ctx, [*self.get_curves(), *self.get_surfaces()])
+        set_physical_groups(ctx, [*self.curves, *self.surfaces])
 
-
-    def get_curves(self):
+    @property
+    def curves(self):
         curves: Sequence[Curve] = []
         for surface_loop in self.surface_loops:
             curves += surface_loop.get_curves()
         return curves
 
-    def get_surfaces(self):
+    @property
+    def surfaces(self):
         surfaces: Sequence[PlaneSurface] = []
         for surface_loop in self.surface_loops:
             surfaces += surface_loop.surfaces

@@ -5,6 +5,7 @@ from ezmesh.geometry.transactions import Point, PlaneSurface, Volume, Curve, Cur
 from ezmesh.geometry.transaction import GeoEntity
 from cadquery import Selector
 from cadquery.selectors import AndSelector, StringSyntaxSelector
+from ezmesh.geometry.transactions.curve import CircleProps, CurveProps
 from ezmesh.geometry.transactions.curve_loop import CurveLoop
 from cadquery.cq import CQObject
 
@@ -49,9 +50,16 @@ class OCPContext:
             elif isinstance(shape, cq.Wire):
                 registry[shape] = CurveLoop(cast(Sequence[Curve], child_entities), tag=next_tag)
             elif isinstance(shape, cq.Edge):
+                points = cast(Sequence[Point], child_entities)
                 curve_type = shape.geomType()
-                radii = [shape.radius()] if curve_type in ("CIRCLE", "ELLIPSE") else None
-                registry[shape] = Curve(cast(Sequence[Point], child_entities), curve_type, radii, tag=next_tag)
+                # radii = [shape.radius()] if curve_type in ("CIRCLE", "ELLIPSE") else None
+                if curve_type == "CIRCLE":
+                    props = CircleProps(curve_type, points[0], shape.radius())
+                elif curve_type == "ELLIPSE":
+                    props = CircleProps(curve_type, points[0], shape.majorRadius(), shape.minorRadius())
+                else:
+                    props = CurveProps(curve_type, points)
+                registry[shape] = Curve(props, tag=next_tag)
             elif isinstance(shape, cq.Vertex):
                 registry[shape] = Point((shape.X, shape.Y, shape.Z), tag=next_tag)
             registry[shape].is_synced = True
