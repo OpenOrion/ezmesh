@@ -6,7 +6,7 @@ from ezmesh import export_to_su2
 from ezmesh.geometry.transactions import Point, PlaneSurface
 from ezmesh.mesh import Mesh
 from ezmesh.mesh.transactions.refinement import Recombine
-from ezmesh.utils.cadquery import OCPContext, initialize_context, intialize_workplane, get_selector, select_ocp_type
+from ezmesh.utils.cadquery import OCPContext, initialize_context, initialize_gmsh_from_cq, intialize_workplane, get_selector, select_ocp_type
 from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, GeoContext
 # from ezmesh.mesh.transactions.transfinite import ExtrudedBoundaryLayer
 from ezmesh.mesh.transaction import MeshTransaction, generate_mesh
@@ -43,7 +43,6 @@ class GeometryQL:
     def __init__(self) -> None:
         self._geo_transactions: list[GeoTransaction] = []
         self._mesh_transactions: list[MeshTransaction] = []
-        self._ocp_ctx = OCPContext()
         self._mesh: Optional[Mesh] = None
         self._initial_workplane = self._workplane = None # type: ignore
     
@@ -69,10 +68,13 @@ class GeometryQL:
         self._initial_workplane = self._workplane
 
         dim = 2 if isinstance(self._workplane.vals()[0], cq.Face) else 3
-        self._ctx = GeoContext(dim)
+        self._geo_ctx = GeoContext(dim)
+        self._ocp_ctx = OCPContext(dim)
 
+        initialize_gmsh_from_cq(self._workplane)
         initialize_context(self._workplane, self._ocp_ctx)
         intialize_workplane(self._workplane, self._ocp_ctx)
+
         return self
 
     # def select(self, tags:Union[Sequence[str], str, None], inverse=False):
@@ -160,7 +162,7 @@ class GeometryQL:
     #     return self
 
     def generate(self, dim: int = 3):
-        self._mesh = generate_mesh(list(self.vals()), self._mesh_transactions, self._ctx, dim)
+        self._mesh = generate_mesh(list(self.vals()), self._mesh_transactions, self._geo_ctx, dim)
         self.end()
         return self
 

@@ -9,8 +9,11 @@ from ezmesh.geometry.transactions.curve_loop import CurveLoop
 from cadquery.cq import CQObject
 
 class OCPContext:
-    def __init__(self) -> None:
+    def __init__(self, dimension: int) -> None:
+        self.dimension = dimension
         self.volumes: OrderedDict[CQObject, GeoEntity] = OrderedDict()
+        self.surface_loops: OrderedDict[CQObject, GeoEntity] = OrderedDict()
+
         self.surfaces: OrderedDict[CQObject, GeoEntity] = OrderedDict()
         self.curve_loops: OrderedDict[CQObject, GeoEntity] = OrderedDict()
         self.edges: OrderedDict[CQObject, GeoEntity] = OrderedDict()
@@ -19,6 +22,8 @@ class OCPContext:
     def get_registry(self, shape: CQObject)-> OrderedDict[CQObject, GeoEntity]:
         if isinstance(shape, (cq.Compound, cq.Solid)): 
             return self.volumes
+        if isinstance(shape, cq.Shell): 
+            return self.surface_loops
         elif isinstance(shape, cq.Face):
             return self.surfaces
         elif isinstance(shape, cq.Wire):
@@ -37,7 +42,7 @@ class OCPContext:
             next_tag = len(registry) + 1
             if isinstance(shape, (cq.Compound, cq.Solid)): 
                 registry[shape] = Volume(cast(Sequence[SurfaceLoop], child_entities), tag=next_tag)
-            if isinstance(shape, (cq.Compound, cq.Solid)): 
+            if isinstance(shape, cq.Shell): 
                 registry[shape] = SurfaceLoop(cast(Sequence[PlaneSurface], child_entities), tag=next_tag)
             elif isinstance(shape, cq.Face):
                 registry[shape] = PlaneSurface(cast(Sequence[CurveLoop], child_entities), tag=next_tag)
@@ -113,15 +118,15 @@ def select_ocp_type(workplane: cq.Workplane, type: Type):
         elif type == cq.Vertex:
             yield from val.Vertices()
 
-def initialize_context(workplane: cq.Workplane, ctx: OCPContext):
+def initialize_gmsh_from_cq(workplane: cq.Workplane):
     topods = workplane.toOCC()
-
     gmsh.model.occ.importShapesNativePointer(topods._address())
     gmsh.model.occ.synchronize()
-    gmsh.model.mesh.generate(1)
 
-    # for solid in workplane.vals():
-    for ocp_face in cast(Sequence[cq.Face], workplane.vals()):
+
+def initialize_context_2d(target: Union[cq.Workplane, Sequence[CQObject]], ctx: OCPContext):
+    ocp_faces = target if isinstance(target, Sequence) else target.vals()
+    for ocp_face in cast(Sequence[cq.Face], ocp_faces):
         cq_wires = [ocp_face.outerWire(), *ocp_face.innerWires()]
         for ocp_wire in cq_wires:
             ocp_edges = ocp_wire.Edges()
@@ -133,6 +138,20 @@ def initialize_context(workplane: cq.Workplane, ctx: OCPContext):
             ctx.add(ocp_wire, ocp_edges)
         ctx.add(ocp_face, cq_wires)
 
+
+
+def initialize_context(workplane: cq.Workplane, ctx: OCPContext):
+    if ctx.dimension == 3:
+        solids = workplane.vals()
+        for solid in  cast(Sequence[cq.Solid], solids):
+            ocp_shells = solid.Shells()
+            for shell in cast(Sequence[cq.Shell],ocp_shells):
+                ocp_faces = shell.Faces()
+                initialize_context_2d(ocp_faces, ctx)
+                ctx.add(shell, ocp_faces)
+            ctx.add(solid, ocp_shells)
+    else:
+        initialize_context_2d(workplane, ctx)
     return ctx
 
 def intialize_workplane(workplane: cq.Workplane, ctx: OCPContext):
