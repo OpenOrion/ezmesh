@@ -6,8 +6,8 @@ from ezmesh import export_to_su2
 from ezmesh.geometry.transactions import Point, PlaneSurface
 from ezmesh.mesh import Mesh
 from ezmesh.mesh.transactions.refinement import Recombine
-from ezmesh.utils.cadquery import CQObject3D, get_entity_id, get_cq_objects_as_type, select_entities, get_selector, initialize_context, intialize_workplane
-from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, Context
+from ezmesh.utils.cadquery import OCPContext, initialize_context, intialize_workplane, get_selector, select_ocp_type
+from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, GeoContext
 # from ezmesh.mesh.transactions.transfinite import ExtrudedBoundaryLayer
 from ezmesh.mesh.transaction import MeshTransaction, generate_mesh
 from jupyter_cadquery import show
@@ -15,8 +15,6 @@ from ezmesh.mesh.visualizer import visualize_mesh
 from ezmesh.geometry.plot import plot_entities
 
 class Geometry:
-    def __init__(self) -> None:
-        self.ctx = Context()
 
     def __enter__(self):
         gmsh.initialize()
@@ -27,8 +25,9 @@ class Geometry:
 
     def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]], mesh_transactions: Sequence[MeshTransaction] = []):
         transactions = transactions if isinstance(transactions, Sequence) else [transactions]
-        self.ctx.dimension = 2 if isinstance(transactions[0], PlaneSurface) else 3
-        self.mesh = generate_mesh(transactions, mesh_transactions, self.ctx, self.ctx.dimension)
+        dim = 3 if isinstance(transactions[0], (cq.Compound, cq.Solid)) else 2
+        ctx = GeoContext(dim)
+        self.mesh = generate_mesh(transactions, mesh_transactions, ctx, dim)
         return self.mesh
 
     def write(self, filename: str):
@@ -44,7 +43,7 @@ class GeometryQL:
     def __init__(self) -> None:
         self._geo_transactions: list[GeoTransaction] = []
         self._mesh_transactions: list[MeshTransaction] = []
-
+        self._ocp_ctx = OCPContext()
         self._mesh: Optional[Mesh] = None
         self._initial_workplane = self._workplane = None # type: ignore
     
@@ -65,36 +64,35 @@ class GeometryQL:
             self._workplane = cq.importers.importStep(target)
         else:
             self._workplane = target
-        dim = 3 if isinstance(self._workplane.vals()[0], CQObject3D) else 2
-
         if isinstance(self._workplane.vals()[0], cq.Wire):
             self._workplane = self._workplane.extrude(0.001).faces("<Z")
         self._initial_workplane = self._workplane
 
-        self._ctx = Context(dim)
+        dim = 2 if isinstance(self._workplane.vals()[0], cq.Face) else 3
+        self._ctx = GeoContext(dim)
 
-        initialize_context(self._workplane, self._ctx)
-        intialize_workplane(self._workplane, self._ctx)
+        initialize_context(self._workplane, self._ocp_ctx)
+        intialize_workplane(self._workplane, self._ocp_ctx)
         return self
 
-    def select(self, tags:Union[Sequence[str], str, None], inverse=False):
-        tags = [tags ]if isinstance(tags, str) else tags or []
-        cq_objects = self._workplane.vals()
-        filtered_cq_objects = []
+    # def select(self, tags:Union[Sequence[str], str, None], inverse=False):
+    #     tags = [tags ]if isinstance(tags, str) else tags or []
+    #     cq_objects = self._workplane.vals()
+    #     filtered_cq_objects = []
 
-        tagged_cq_objects = []
-        for tag in tags:
-            tagged_workspace = self._workplane._getTagged(tag)
-            tagged_cq_objects += get_cq_objects_as_type(tagged_workspace, type(cq_objects[0]))
-        tagged_cq_object_ids = [get_entity_id(tagged_cq_object) for tagged_cq_object in tagged_cq_objects] 
+    #     tagged_cq_objects = []
+    #     for tag in tags:
+    #         tagged_workspace = self._workplane._getTagged(tag)
+    #         tagged_cq_objects += select_ocp_type(tagged_workspace, type(cq_objects[0]))
+    #     tagged_cq_object_ids = [get_entity_id(tagged_cq_object) for tagged_cq_object in tagged_cq_objects] 
 
-        for cq_object in cq_objects:
-            id = get_entity_id(cq_object)
-            if (not inverse and id in tagged_cq_object_ids) or (inverse and id not in tagged_cq_object_ids):
-                filtered_cq_objects.append(cq_object)
+    #     for cq_object in cq_objects:
+    #         id = get_entity_id(cq_object)
+    #         if (not inverse and id in tagged_cq_object_ids) or (inverse and id not in tagged_cq_object_ids):
+    #             filtered_cq_objects.append(cq_object)
 
-        self._workplane = self._workplane.newObject(filtered_cq_objects)
-        return self
+    #     self._workplane = self._workplane.newObject(filtered_cq_objects)
+    #     return self
 
 
     def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None):
@@ -116,8 +114,8 @@ class GeometryQL:
         self._workplane = self._workplane.vertices(selector, tag)
         return self
 
-    def vals(self) -> Sequence[GeoEntity]:
-        return select_entities(self._workplane.vals(), self._ctx)
+    def vals(self):
+        return self._ocp_ctx.select_many(self._workplane.vals())
 
     def tag(self, name: str):
         self._workplane = self._workplane.tag(name)
@@ -138,15 +136,15 @@ class GeometryQL:
 
 
     def recombine(self, angle: float):
-        faces = cast(Sequence[cq.Face], get_cq_objects_as_type(self._workplane, cq.Face))
-        surfaces = select_entities(faces, self._ctx)
+        faces = cast(Sequence[cq.Face], select_ocp_type(self._workplane, cq.Face))
+        surfaces = self._ocp_ctx.select_many(faces)
         self._mesh_transactions += [Recombine(surface, angle) for surface in surfaces]
         # self.reset()
         return self
 
     def setMeshSize(self, mesh_size: Union[float, Callable[[Point], float]]):
-        vertices = cast(Sequence[cq.Vertex],get_cq_objects_as_type(self._workplane, cq.Vertex))
-        points = select_entities(vertices, self._ctx)
+        vertices = cast(Sequence[cq.Vertex],select_ocp_type(self._workplane, cq.Vertex))
+        points = self._ocp_ctx.select_many(vertices)
         for point in cast(Sequence[Point], points):
             if isinstance(mesh_size, Callable):
                 mesh_size = mesh_size(point)
@@ -155,14 +153,14 @@ class GeometryQL:
         return self
 
     # def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
-    #     target = cast(Sequence[Union[PlaneSurface, Edge]], self.vals())
+    #     target = cast(Sequence[Union[PlaneSurface, Curve]], self.vals())
     #     ext_bnd_layer = ExtrudedBoundaryLayer(target, num_layers, hwall_n, ratio)
     #     self._transactions.append(ext_bnd_layer)
     #     # self.reset()
     #     return self
 
     def generate(self, dim: int = 3):
-        self._mesh = generate_mesh(self.vals(), self._mesh_transactions, self._ctx, dim)
+        self._mesh = generate_mesh(list(self.vals()), self._mesh_transactions, self._ctx, dim)
         self.end()
         return self
 

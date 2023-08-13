@@ -1,7 +1,7 @@
 from dataclasses import field
 import gmsh
 from enum import Enum
-from typing import Optional, Sequence
+from typing import Optional, Sequence, cast
 import numpy as np
 from ezmesh.utils.norm import norm_coord
 from ezmesh.utils.types import Number, NumpyFloat
@@ -14,43 +14,63 @@ class DimType(Enum):
     VOLUME = 3
     CURVE_LOOP = 10
     
-GeoEntityId = tuple[DimType, tuple[float, float, float]]
 
 
-class Context:
-    register: dict[GeoEntityId, "GeoEntity"]
-    point_tags: dict[tuple[Number, Number, Number], int]
-    edge_tags: dict[tuple[int, int], int]
+class GeoContext:
+    points: dict[tuple[float, float, float], "GeoEntity"]
+    curves: dict[tuple[tuple[float, float, float], tuple[float, float, float]], "GeoEntity"]
 
-    def __init__(self, dimension: int = 3) -> None:
+    def __init__(self, dimension) -> None:
         self.dimension = dimension
-        self.point_tags = {}
-        self.edge_tags = {}
-        self.register = {}
+        self.points: dict[tuple[float, float, float], "GeoEntity"] = {}
+        self.curves: dict[tuple[tuple[float, float, float], tuple[float, float, float]], "GeoEntity"] = {}
+        self.physical_groups = {}
 
-    def add_edge(self, edge):
-        self.edge_tags[(edge.start.tag, edge.end.tag)] = edge.tag
+    def get_registry(self, entity: "GeoEntity"):
+        if entity.type == DimType.POINT:
+            self.points
+        elif entity.type == DimType.CURVE:
+            return self.curves
+    
+    def get_entity_id(self, entity: "GeoEntity"):
+        if entity.type == DimType.POINT:
+            return norm_coord(entity.coord, round_by=None) # type: ignore
+        elif entity.type == DimType.CURVE:
+            start_coord = norm_coord(entity.start.coord, round_by=None) # type: ignore
+            end_coord = norm_coord(entity.end.coord, round_by=None) # type: ignore
+            return (start_coord, end_coord)
 
-    def add_point(self, point):
-        self.point_tags[norm_coord(point.coord)] = point.tag
+    def add(self, entity: "GeoEntity"):
+        entity_id = self.get_entity_id(entity)
+        registry = self.get_registry(entity)
+        registry[entity_id] = entity # type: ignore
+
+    
+    def get(self, entity: "GeoEntity"):
+        registry = self.get_registry(entity)
+        entity_id = self.get_entity_id(entity)
+        return registry[entity_id] # type: ignore
 
 
 
 class GeoTransaction:
-    is_commited: bool = False
-    "tag of entity"
+    is_synced: bool = False
+    "whether geometry has been synced"
 
-    def before_sync(self, ctx: Context):
+    is_commited: bool = False
+    "whether geometry has been commited"
+
+    def before_sync(self, ctx: GeoContext):
         "completes transaction before syncronization and returns tag."
         ...
 
-    def after_sync(self, ctx: Context):
+    def after_sync(self, ctx: GeoContext):
         "completes transaction after syncronization and returns tag."
         ...
 
 
 class GeoEntity(GeoTransaction):
-    tag: Optional[int] = None
+    tag: int
     "tag of entity"
 
     type: DimType
@@ -59,30 +79,20 @@ class GeoEntity(GeoTransaction):
     label: Optional[str]
     "physical group label"        
 
-    fields: Sequence = field(default_factory=list)
-    "fields to be added to the surface"
-
     def set_label(self, label: str):
         self.label = label
 
     def __eq__(self, __value: "GeoEntity") -> bool:
         return (self.type, self.tag) == (__value.type, __value.tag)
-    
-    @property
-    def id(self) -> GeoEntityId:
-        return (self.type, norm_coord(gmsh.model.occ.getCenterOfMass(self.type.value, self.tag)))
 
 
-def commit_geo_transactions(transactions: Sequence[GeoTransaction], ctx: Context):
+def commit_geo_transactions(transactions: Sequence[GeoTransaction], ctx: GeoContext):
     for transaction in transactions:
         transaction.before_sync(ctx)
-    # for point in ctx.points.values():
-    #     point.before_sync(ctx)    
     gmsh.model.occ.synchronize()
 
     for transaction in transactions:
         transaction.after_sync(ctx)
+        transaction.is_synced = True
         transaction.is_commited = True
-    # for point in ctx.points.values():
-    #     point.after_sync(ctx)
 

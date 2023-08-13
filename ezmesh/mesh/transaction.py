@@ -1,6 +1,6 @@
-from typing import Sequence, Union
+from typing import Optional, Sequence, Union
 import gmsh
-from ezmesh.geometry.transaction import Context, GeoTransaction, commit_geo_transactions
+from ezmesh.geometry.transaction import GeoContext, GeoTransaction, commit_geo_transactions
 from ezmesh.mesh.importers import import_from_gmsh
 
 
@@ -29,12 +29,11 @@ def commit_mesh_transactions(transactions: Sequence[MeshTransaction], dim: int):
 
 
 def generate_mesh(
-    geo_transactions: Union[GeoTransaction, Sequence[GeoTransaction]], 
-    mesh_transactions: Sequence[MeshTransaction] = [],
-    ctx: Context = Context(), 
+    geo_transactions: Sequence[GeoTransaction], 
+    mesh_transactions: Sequence[MeshTransaction],
+    ctx: GeoContext, 
     dim: int = 3
 ):
-    geo_transactions = [geo_transactions] if isinstance(geo_transactions, GeoTransaction) else geo_transactions
     commit_geo_transactions(geo_transactions, ctx)
     commit_mesh_transactions(mesh_transactions, dim)
 

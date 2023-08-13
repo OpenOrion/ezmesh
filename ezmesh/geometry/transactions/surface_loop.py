@@ -1,7 +1,7 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional, Sequence
-from ezmesh.geometry.transaction import DimType, GeoEntity, Context
+from ezmesh.geometry.transaction import DimType, GeoEntity, GeoContext
 from ezmesh.geometry.transactions.plane_surface import PlaneSurface
 
 @dataclass
@@ -12,25 +12,21 @@ class SurfaceLoop(GeoEntity):
     label: Optional[str] = None
     "label for physical group surface loop"
 
-    tag: Optional[int] = None
+    tag: int = -1
     "tag of surface loop"
 
     def __post_init__(self):
         self.type = DimType.SURFACE
 
-    def before_sync(self, ctx: Context):
-        surface_loop_tags = [surface.before_sync(ctx) for surface in self.surfaces]
-        self.tag = self.tag or gmsh.model.occ.addSurfaceLoop(surface_loop_tags)
+    def before_sync(self, ctx: GeoContext):
+        if not self.is_synced:
+            surface_loop_tags = [surface.before_sync(ctx) for surface in self.surfaces]
+            self.tag = gmsh.model.occ.addSurfaceLoop(surface_loop_tags, self.tag)
         return self.tag
 
-    def after_sync(self, ctx: Context):
+    def after_sync(self, ctx: GeoContext):
         for surface in self.surfaces:
             surface.after_sync(ctx)
 
-    def get_edges(self):
-        return [edge for surface in self.surfaces for edge in surface.get_edges()]
-
-    @staticmethod
-    def from_tag(tag: int, surface_tags: Sequence[int], ctx: Context):
-        surfaces = [PlaneSurface.from_tag(surface_tag, ctx) for surface_tag in surface_tags]
-        return SurfaceLoop(surfaces, tag=tag)
+    def get_curves(self):
+        return [curve for surface in self.surfaces for curve in surface.get_curves()]

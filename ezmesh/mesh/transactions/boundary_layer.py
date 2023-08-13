@@ -1,14 +1,14 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional, Sequence, Union
-from ezmesh.geometry.transaction import Context, GeoTransaction
-from ezmesh.geometry.transactions.edge import Edge
+from ezmesh.geometry.transaction import GeoContext, GeoTransaction
+from ezmesh.geometry.transactions.curve import Curve
 from ezmesh.geometry.transactions.plane_surface import PlaneSurface
 from ezmesh.mesh.transaction import MeshTransaction
 
 @dataclass
 class BoundaryLayer(MeshTransaction):
-    targets: Sequence[Union[Edge, PlaneSurface]]
+    targets: Sequence[Union[Curve, PlaneSurface]]
     "target to be added to the boundary layer"
 
     num_layers: int
@@ -44,8 +44,8 @@ class BoundaryLayer(MeshTransaction):
 
 @dataclass
 class BoundaryLayer2D(GeoTransaction):
-    edges: Sequence[Edge]
-    "edges to be added to the boundary layer"
+    curves: Sequence[Curve]
+    "curve to be added to the boundary layer"
 
     aniso_max: Optional[float] = None
     "threshold angle for creating a mesh fan in the boundary layer"
@@ -71,14 +71,14 @@ class BoundaryLayer2D(GeoTransaction):
     def __post_init__(self):
         self.tag = None
 
-    def before_sync(self, ctx: Context):
+    def before_sync(self, ctx: GeoContext):
         super().before_sync(ctx)
 
-    def after_sync(self, ctx: Context):
+    def after_sync(self, ctx: GeoContext):
         if not self.tag:
             self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
-            edge_tags = [edge.tag for edge in self.edges]
-            gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', edge_tags)
+            curve_tags = [curve.tag for curve in self.curves]
+            gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', curve_tags)
             if self.aniso_max:
                 gmsh.model.mesh.field.setNumber(self.tag, "AnisoMax", self.aniso_max)
             if self.intersect_metrics:

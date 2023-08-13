@@ -13,9 +13,11 @@ setup(
     "numpy",
     "gmsh",
     "ipywidgets==7.6",
+    "ipython_genutils",
     "pythreejs",
     "su2fmt @ git+https://github.com/Turbodesigner/su2fmt.git",
     "shapely",
-    "scipy"
+    "scipy",
+    "jupyter_cadquery"
    ]
 )

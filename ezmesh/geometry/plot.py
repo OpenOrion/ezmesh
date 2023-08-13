@@ -1,6 +1,6 @@
 from typing import Sequence, Union
 from plotly import graph_objects as go
-from ezmesh.geometry.transactions.edge import Edge
+from ezmesh.geometry.transactions.curve import Curve
 from ezmesh.geometry.transaction import GeoEntity
 from ezmesh.geometry.transactions.plane_surface import PlaneSurface
 from ezmesh.geometry.transactions.volume import Volume
@@ -40,7 +40,7 @@ def plot_entities(
         layout=go.Layout(title=go.layout.Title(text=title))
     )
     surface_coord_groups: dict[str, list[np.ndarray]] = {}
-    edge_coord_groups: dict[str, list[np.ndarray]] = {}
+    curve_coord_groups: dict[str, list[np.ndarray]] = {}
 
     for entity in entities:
         if isinstance(entity, (Volume, PlaneSurface)):
@@ -54,19 +54,19 @@ def plot_entities(
                 for curve_loop in surface.curve_loops:
                     curve_loop_label = curve_loop.label or f"CurveLoop{curve_loop.tag}"
 
-                    if curve_loop.tag not in edge_coord_groups:
-                        edge_coord_groups[curve_loop_label] = []
+                    if curve_loop.tag not in curve_coord_groups:
+                        curve_coord_groups[curve_loop_label] = []
 
-                    edge_coords = curve_loop.get_coords(samples_per_spline, True)
-                    edge_coord_groups[curve_loop_label].append(edge_coords)
+                    curve_coords = curve_loop.get_coords(samples_per_spline, True)
+                    curve_coord_groups[curve_loop_label].append(curve_coords)
 
-        elif isinstance(entity, Edge):
-            edge_label = entity.label or f"Edge{entity.tag}"
-            if entity.tag not in edge_coord_groups:
-                edge_coord_groups[edge_label] = []
+        elif isinstance(entity, Curve):
+            curve_label = entity.label or f"Curve{entity.tag}"
+            if entity.tag not in curve_coord_groups:
+                curve_coord_groups[curve_label] = []
 
-            edge_coords = entity.get_coords(samples_per_spline)
-            edge_coord_groups[edge_label].append(edge_coords)
+            curve_coords = entity.get_coords(samples_per_spline)
+            curve_coord_groups[curve_label].append(curve_coords)
         else:
             raise ValueError(f"Unknown entity type: {type(entities[0])}")
 
@@ -76,10 +76,10 @@ def plot_entities(
             for surface_coords in coord_group:
                 add_plot(surface_coords, fig, label)
 
-    if isinstance(entities[0], (Edge, PlaneSurface)):
-        for label, coord_group in edge_coord_groups.items():
-            edge_coords = np.array(coord_group if len(coord_group) > 1 else coord_group[0], dtype=NumpyFloat)
-            add_plot(edge_coords, fig, label)
+    if isinstance(entities[0], (Curve, PlaneSurface)):
+        for label, coord_group in curve_coord_groups.items():
+            curve_coords = np.array(coord_group if len(coord_group) > 1 else coord_group[0], dtype=NumpyFloat)
+            add_plot(curve_coords, fig, label)
 
 
     fig.layout.yaxis.scaleanchor = "x"  # type: ignore
