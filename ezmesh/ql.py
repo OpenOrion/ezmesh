@@ -1,54 +1,23 @@
 import gmsh
 import cadquery as cq
-from typing import Callable, Literal, Optional, Sequence, Union, cast
+from typing import Callable, Literal, Optional, Union
 from cadquery.selectors import Selector
-from ezmesh import export_to_su2
-from ezmesh.geometry.transactions import Point
-from ezmesh.geometry.transactions.curve import Curve
-from ezmesh.geometry.transactions.plane_surface import PlaneSurface
-from ezmesh.geometry.transactions.volume import Volume
-from ezmesh.mesh import Mesh
-from ezmesh.mesh.transactions.boundary_layer import BoundaryLayer
-from ezmesh.mesh.transactions.refinement import Recombine
-from ezmesh.utils.cadquery import OCPContext, initialize_context, initialize_gmsh_from_cq, intialize_workplane, get_selector, select_ocp_type
-from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, GeoContext
-from ezmesh.mesh.transaction import MeshTransaction, generate_mesh
+from ezmesh.mesh.exporters import export_to_su2
+from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm
+from ezmesh.transactions.boundary_layer import BoundaryLayer
+from ezmesh.transactions.refinement import Recombine, Refine, SetSize
+from ezmesh.utils.cadquery import OCCMap, get_selector, import_workplane, select_occ_type, tag_workplane
+from ezmesh.transactions.transaction import TransactionContext
 from jupyter_cadquery import show
-from ezmesh.mesh.visualizer import visualize_mesh
-from ezmesh.geometry.plot import plot_entities
-
-class Geometry:
-
-    def __enter__(self):
-        gmsh.initialize()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        gmsh.finalize()
-
-    def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]], mesh_transactions: Sequence[MeshTransaction] = []):
-        transactions = transactions if isinstance(transactions, Sequence) else [transactions]
-        dim = 3 if isinstance(transactions[0], Volume) else 2
-        ctx = GeoContext(dim)
-        self.mesh = generate_mesh(transactions, mesh_transactions, ctx, dim)
-        return self.mesh
-
-    def write(self, filename: str):
-        if filename.endswith(".su2"):
-            export_to_su2(self.mesh, filename)
-        else:
-            gmsh.write(filename)
-
+from ezmesh.visualizer import visualize_mesh
 
 class GeometryQL:
     _workplane: cq.Workplane
     _initial_workplane: cq.Workplane
     def __init__(self) -> None:
-        self._geo_transactions: list[GeoTransaction] = []
-        self._mesh_transactions: list[MeshTransaction] = []
-        self._mesh: Optional[Mesh] = None
         self._initial_workplane = self._workplane = None # type: ignore
-    
+        self._ctx = TransactionContext()
+
     def __enter__(self):
         gmsh.initialize()
         return self
@@ -62,24 +31,17 @@ class GeometryQL:
     
     def load(self, target: Union[cq.Workplane, str]):
         assert self._workplane is None, "Workplane is already loaded."
-        if isinstance(target, str):
-            self._workplane = cq.importers.importStep(target)
-        else:
-            self._workplane = target
-        if isinstance(self._workplane.vals()[0], cq.Wire):
-            self._workplane = self._workplane.extrude(-0.001).faces(">Z")
-        self._initial_workplane = self._workplane
 
-        dim = 2 if isinstance(self._workplane.vals()[0], cq.Face) else 3
-        self._geo_ctx = GeoContext(dim)
-        self._ocp_ctx = OCPContext(dim)
+        self._initial_workplane = self._workplane = import_workplane(target)
 
-        initialize_gmsh_from_cq(self._workplane)
-        initialize_context(self._workplane, self._ocp_ctx)
-        intialize_workplane(self._workplane, self._ocp_ctx)
+        topods = self._workplane.toOCC()
+        gmsh.model.occ.importShapesNativePointer(topods._address())
+        gmsh.model.occ.synchronize()
+        self._occ_map = OCCMap(self._workplane)
 
+        tag_workplane(self._workplane, self._occ_map)
         return self
-
+    
     # def select(self, tags:Union[Sequence[str], str, None], inverse=False):
     #     tags = [tags ]if isinstance(tags, str) else tags or []
     #     cq_objects = self._workplane.vals()
@@ -120,7 +82,7 @@ class GeometryQL:
         return self
 
     def vals(self):
-        return list(self._ocp_ctx.select_many(self._workplane.vals()))
+        return list(self._occ_map.select_many(self._workplane.vals()))
 
     def tag(self, name: str):
         self._workplane = self._workplane.tag(name)
@@ -132,45 +94,50 @@ class GeometryQL:
         return self
 
     def addPhysicalGroup(self, name: str, tagWorkspace: bool = True):
-        for entity in self.vals():
-            entity.set_label(name)
+        self._ctx.add_physical_groups(name, self.vals())
         if tagWorkspace:
             self.tag(name)
         return self
 
-
-    def recombine(self, angle: float):
-        faces = cast(Sequence[cq.Face], select_ocp_type(self._workplane, cq.Face))
-        surfaces = self._ocp_ctx.select_many(faces)
-        self._mesh_transactions += [Recombine(surface, angle) for surface in surfaces]
+    def recombine(self, angle: float = 45):
+        faces = select_occ_type(self._workplane, cq.Face)
+        surfaces = self._occ_map.select_many(faces)
+        recombine = Recombine(surfaces, angle)
+        self._ctx.add_transaction(recombine)
         return self
 
-    def setMeshSize(self, mesh_size: Union[float, Callable[[Point], float]]):
-        vertices = cast(Sequence[cq.Vertex],select_ocp_type(self._workplane, cq.Vertex))
-        points = self._ocp_ctx.select_many(vertices)
-        for point in cast(Sequence[Point], points):
-            if isinstance(mesh_size, Callable):
-                mesh_size = mesh_size(point)
-            point.set_mesh_size(mesh_size)
+    def refine(self, num_refines = 1):
+        refine = Refine(num_refines)
+        self._ctx.add_transaction(refine)
+        return self
+
+    def setMeshSize(self, size: Union[float, Callable[[float,float,float], float]]):
+        vertices = select_occ_type(self._workplane, cq.Vertex)
+        points = self._occ_map.select_many(vertices)
+        set_size = SetSize(points, size)
+        self._ctx.add_transaction(set_size)
+        return self
+
+    def setAlgorithm(self, type: MeshAlgorithm2DType):
+        set_algorithm = SetMeshAlgorithm(self.vals(), type)
+        self._ctx.add_transaction(set_algorithm)
         return self
 
     def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
-        target = cast(Sequence[Union[PlaneSurface, Curve]], self.vals())
-        ext_bnd_layer = BoundaryLayer(target, num_layers, hwall_n, ratio)
-        self._mesh_transactions.append(ext_bnd_layer)
+        boundary_layer = BoundaryLayer(self.vals(), num_layers, hwall_n, ratio)
+        self._ctx.add_transaction(boundary_layer)
         return self
 
     def generate(self, dim: int = 3):
-        self._mesh = generate_mesh(self.vals(), self._mesh_transactions, self._geo_ctx, dim)
-        self.end()
+        self._ctx.commit(dim)
         return self
 
     def write(self, filename: str, dim: int = 3):
-        if self._mesh is None:
+        if self._ctx.mesh is None:
             self.generate(dim)
-        assert self._mesh is not None
+        assert self._ctx.mesh is not None
         if filename.endswith(".su2"):
-            export_to_su2(self._mesh, filename)
+            export_to_su2(self._ctx.mesh, filename)
         else:
             gmsh.write(filename)
         return self
@@ -179,10 +146,11 @@ class GeometryQL:
         if type == "fltk":
             gmsh.fltk.run()
         elif type == "mesh":
-            assert self._mesh is not None, "Mesh is not generated yet."
-            visualize_mesh(self._mesh)
+            assert self._ctx.mesh is not None, "Mesh is not generated yet."
+            visualize_mesh(self._ctx.mesh)
         elif type == "plot":
-            plot_entities(self.vals())
+            ...
+            # plot_entities(self.vals())
         else:
             show(self._workplane)
         return self

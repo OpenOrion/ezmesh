@@ -1,14 +1,14 @@
 import gmsh
 from dataclasses import dataclass, field
 from typing import Optional, Sequence, Union, cast
-from ezmesh.geometry.transaction import GeoContext, GeoTransaction
+from ezmesh.transactions.transaction import GeoContext, Transaction
 from ezmesh.geometry.transactions.curve import Curve
-from ezmesh.geometry.transactions.plane_surface import PlaneSurface
+from ezmesh.geometry.geometry import PlaneSurface
 from ezmesh.geometry.transactions.point import Point
 from ezmesh.geometry.transactions.volume import Volume
 
 @dataclass
-class BoundaryLayer(GeoTransaction):
+class BoundaryLayer(Transaction):
     targets: Sequence[Union[Curve, PlaneSurface]]
     "target to be added to the boundary layer"
 
@@ -49,7 +49,7 @@ class BoundaryLayer(GeoTransaction):
 
 
 @dataclass
-class BoundaryLayer2D(GeoTransaction):
+class BoundaryLayer2D(Transaction):
     curves: Sequence[Curve]
     "curves to be added to the boundary layer"
 
@@ -104,7 +104,7 @@ class BoundaryLayer2D(GeoTransaction):
 
 
 @dataclass
-class TransfiniteCurveField(GeoTransaction):
+class TransfiniteCurveField(Transaction):
     curves: Sequence[Curve]
     "curves to be added to the boundary layer"
 
@@ -137,7 +137,7 @@ class TransfiniteCurveField(GeoTransaction):
 
 
 @dataclass
-class TransfiniteSurfaceField(GeoTransaction):
+class TransfiniteSurfaceField(Transaction):
     """
     A plane surface with transfinite meshing. Normal plane if corners are not defined.
     """
@@ -164,7 +164,7 @@ class TransfiniteSurfaceField(GeoTransaction):
                 gmsh.model.mesh.setTransfiniteSurface(surface.tag, self.arrangement, corner_tags)
 
 @dataclass
-class TransfiniteVolumeField(GeoTransaction):
+class TransfiniteVolumeField(Transaction):
     """
     A plane surface with transfinite meshing. Normal plane if corners are not defined.
     """

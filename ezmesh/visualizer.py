@@ -1,11 +1,10 @@
 from typing import Any, Sequence, Union, cast
-from .mesh import Mesh
+from .mesh.mesh import Mesh
 import pythreejs
 from IPython.display import display
 from IPython.core.display import HTML
 import ipywidgets as widgets
 import numpy as np
-
 import colorsys
 
 def generate_color_legend_html(title: str, color_labels: dict[str, list[int]]):
@@ -41,6 +40,7 @@ def generate_rgb_values(n_colors, is_grayscale=False):
 def to_rgb_str(color: Sequence[int]):
     return f"rgb({int(color[0]*255)},{int(color[1]*255)},{int(color[2]*255)})"
 
+
 def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=600):
     coord_html = widgets.HTML("Coords: ()")
 
@@ -68,8 +68,9 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
     for i, mesh in enumerate(meshes):
         mesh_color = mesh_colors[i]
         mesh_color_labels[f"Zone {i}"] = mesh_color
-        bounding_box = mesh.get_bounding_box()
-        point_size = max(bounding_box.width, bounding_box.height)*0.03
+        max_point = mesh.points.min(axis=0)
+        min_point = mesh.points.max(axis=0)
+        point_size = max(max_point[0] - min_point[0], max_point[1] - min_point[1])*0.03
         # Marker line segment points and colors
         marker_line_points = []
         marker_segment_colors = []
@@ -142,7 +143,7 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
             buffer_meshes.append(buffer_mesh)
 
     camera = pythreejs.PerspectiveCamera(position=[0, 0, 1], far=100000, near=0.001, aspect=cast(Any, view_width/view_height))
-    scene = pythreejs.Scene(children=[*marker_line_segments, *buffer_meshes, *target_point_spheres, pythreejs.AmbientLight(intensity=0.8)], background="black")
+    scene = pythreejs.Scene(children=[*marker_line_segments, *buffer_meshes, *target_point_spheres, pythreejs.AmbientLight(intensity=cast(int, 0.8))], background="black")
     orbit_controls = pythreejs.OrbitControls(controlling=camera)
 
     pickable_objects = pythreejs.Group()
