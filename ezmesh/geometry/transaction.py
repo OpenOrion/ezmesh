@@ -1,11 +1,9 @@
 from dataclasses import field
 import gmsh
 from enum import Enum
-from typing import Optional, Sequence, cast
+from typing import Iterable, Optional, Sequence
 import numpy as np
-from ezmesh.utils.norm import norm_coord
-from ezmesh.utils.shapes import get_sampling
-from ezmesh.utils.types import NumpyFloat
+from ezmesh.utils.types import Number
 
 
 class DimType(Enum):
@@ -16,12 +14,15 @@ class DimType(Enum):
     CURVE_LOOP = 10
     
 
+def norm_coord(iterable: Iterable[Number], round_by: Optional[int] = 5) -> tuple[float, float, float]:
+    return tuple(
+        round(float(num), round_by) if round_by 
+        else num
+        for num in iterable # type: ignore
+    )
 
 class GeoContext:
-    points: dict[tuple[float, float, float], "GeoEntity"]
-    curves: dict[tuple[tuple[float, float, float], tuple[float, float, float]], "GeoEntity"]
-
-    def __init__(self, dimension) -> None:
+    def __init__(self, dimension: int) -> None:
         self.dimension = dimension
         self.points: dict[tuple[float, float, float], "GeoEntity"] = {}
         self.curves: dict[tuple[tuple[float, float, float], tuple[float, float, float]], "GeoEntity"] = {}
@@ -55,11 +56,12 @@ class GeoContext:
 
 
 class GeoTransaction:
-    is_synced: bool = False
-    "whether geometry has been synced"
+    def __init__(self) -> None:
+        self.is_synced: bool = False
+        "whether geometry has been synced"
 
-    is_commited: bool = False
-    "whether geometry has been commited"
+        self.is_commited: bool = False
+        "whether geometry has been commited"
 
     def before_sync(self, ctx: GeoContext):
         "completes transaction before syncronization and returns tag."
@@ -71,14 +73,18 @@ class GeoTransaction:
 
 
 class GeoEntity(GeoTransaction):
-    tag: int
-    "tag of entity"
+    def __init__(self, type: DimType, tag: int = -1, label: Optional[str] = None) -> None:
+        super().__init__()
+        self.type = type
+        "type of entity"
 
-    type: DimType
-    "type of entity"
+        # only set for non dataclasses that don't already have this defined
+        if not hasattr(self, "tag"):
+            self.tag = tag
+            "tag of entity"
 
-    label: Optional[str]
-    "physical group label"        
+            self.label = label
+            "physical group label"        
 
     def set_label(self, label: str):
         self.label = label
@@ -90,6 +96,7 @@ class GeoEntity(GeoTransaction):
 def commit_geo_transactions(transactions: Sequence[GeoTransaction], ctx: GeoContext):
     for transaction in transactions:
         transaction.before_sync(ctx)
+    
     gmsh.model.occ.synchronize()
 
     for transaction in transactions:
@@ -97,3 +104,25 @@ def commit_geo_transactions(transactions: Sequence[GeoTransaction], ctx: GeoCont
         transaction.is_synced = True
         transaction.is_commited = True
 
+    # def meshSizeCallback(dim, tag, x, y, z, lc=0.0):
+    #     return min(lc, 0.02 * x + 0.01)
+
+    # gmsh.model.mesh.setSizeCallback(meshSizeCallback)
+    # gmsh.model.mesh.setSize([(0,5)], 0.01)
+    # gmsh.model.mesh.setSize([(0,6)], 0.01)
+    # gmsh.model.mesh.setSize([(0,7)], 0.01)
+    # gmsh.model.mesh.setSize([(0,8)], 0.01)
+    # gmsh.model.mesh.setSize([(0,9)], 0.01)
+    # gmsh.model.mesh.setSize([(0,10)], 0.01)
+    # gmsh.model.mesh.setSize([(0,11)], 0.01)
+    # gmsh.model.mesh.setSize([(0,12)], 0.01)
+    # gmsh.model.mesh.setSize([(0,13)], 0.01)
+
+    # def meshSizeCallback(dim, tag, x, y, z):
+    #     return 0.02 * x + 0.01
+    # gmsh.model.mesh.setSizeCallback(meshSizeCallback)
+
+
+    # gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
+    # gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 1)
+    # gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 1)

@@ -18,7 +18,8 @@ def add_plot(coords: npt.NDArray[NumpyFloat], fig: go.Figure=go.Figure(), label:
             y=coords[:,1],
             z=coords[:,2],
             name=label,
-            mode="lines"                
+            mode="lines+markers",
+            marker=dict(size=1)       
         )
     else:
         fig.add_scatter(
@@ -26,7 +27,8 @@ def add_plot(coords: npt.NDArray[NumpyFloat], fig: go.Figure=go.Figure(), label:
             y=coords[:,1],
             name=label,
             fill="toself",
-            mode="lines"
+            mode="lines+markers",
+            marker=dict(size=1)       
         )
 
     return fig

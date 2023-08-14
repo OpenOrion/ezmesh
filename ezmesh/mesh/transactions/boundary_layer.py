@@ -23,23 +23,25 @@ class BoundaryLayer(MeshTransaction):
     is_quad_mesh: bool = True
     "generate recombined elements in the boundary layer"
 
-        
+    def __post_init__(self):
+        super().__init__()
+
     def before_gen(self):
-        if self.tag is None:
+        if not self.is_commited:
             heights = [self.hwall_n]
             for i in range(1, self.num_layers): 
                 heights.append(heights[-1] + heights[0] * self.ratio**i)
             
             dimTags = [(target.type.value, target.tag) for target in self.targets]
-            extruded_bnd_layer = gmsh.model.occ.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
+            extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
 
             top = []
             for i in range(1, len(extruded_bnd_layer)):
                 if extruded_bnd_layer[i][0] == 3:
                     top.append(extruded_bnd_layer[i-1])
-            gmsh.model.occ.synchronize()
+            gmsh.model.geo.synchronize()
             bnd = gmsh.model.getBoundary(top)
-            self.tag = gmsh.model.occ.addCurveLoop([c[1] for c in bnd])
+            gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
 
 
 @dataclass

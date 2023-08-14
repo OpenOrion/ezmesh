@@ -16,7 +16,7 @@ class SurfaceLoop(GeoEntity):
     "tag of surface loop"
 
     def __post_init__(self):
-        self.type = DimType.SURFACE
+        super().__init__(DimType.SURFACE)
 
     def before_sync(self, ctx: GeoContext):
         if not self.is_synced:

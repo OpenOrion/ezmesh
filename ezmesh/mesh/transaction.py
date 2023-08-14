@@ -5,8 +5,9 @@ from ezmesh.mesh.importers import import_from_gmsh
 
 
 class MeshTransaction:
-    is_commited: bool = False
-    "tag of entity"
+    def __init__(self):
+        self.is_commited: bool = False
+        "tag of entity"
 
     def before_gen(self):
         "completes transaction before mesh generation."

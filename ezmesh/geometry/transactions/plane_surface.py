@@ -3,8 +3,16 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, cast
 from ezmesh.geometry.transaction import GeoContext, DimType, GeoEntity
 from ezmesh.geometry.transactions.curve_loop import CurveLoop
-from ezmesh.utils.geometry import get_physical_group_tags
 
+def get_physical_group_tags(entities: Sequence[GeoEntity]):
+    physical_groups: dict[tuple[DimType, str], list[int]] = {}
+    for entity in entities:
+        if not entity.label or entity.tag == -1 or entity.is_commited:
+            continue
+        if (entity.type, entity.label) not in physical_groups:
+            physical_groups[(entity.type, entity.label)] = []
+        physical_groups[(entity.type, entity.label)].append(entity.tag)
+    return physical_groups
 
 def set_physical_groups(ctx: GeoContext, entities: Sequence[GeoEntity]):
     for ((dim_type, label), group_tags) in get_physical_group_tags(entities).items():
@@ -23,8 +31,8 @@ class PlaneSurface(GeoEntity):
     "tag of the surface"
 
     def __post_init__(self):
-        self.type = DimType.SURFACE
-        
+        super().__init__(DimType.SURFACE)
+
     def before_sync(self, ctx: GeoContext):
         if not self.is_synced:
             curve_loop_tags = [curve_loop.before_sync(ctx) for curve_loop in self.curve_loops]
@@ -38,6 +46,7 @@ class PlaneSurface(GeoEntity):
         # Assume that the PlaneSurface is the top-level
         if ctx.dimension == 2:
             set_physical_groups(ctx, [*self.curves, self])
+
 
     @property
     def curves(self):

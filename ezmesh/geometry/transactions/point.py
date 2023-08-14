@@ -23,7 +23,7 @@ class Point(GeoEntity):
     "tag of point"
 
     def __post_init__(self):
-        self.type = DimType.POINT
+        super().__init__(DimType.POINT)
         self.x = self.coord[0]
         self.y = self.coord[1]
         self.z = self.coord[2] if len(self.coord) == 3 else 0
@@ -41,9 +41,9 @@ class Point(GeoEntity):
                 self.tag = gmsh.model.occ.add_point(self.x, self.y, self.z, self.mesh_size, self.tag)
                 ctx.add(self)
 
-        gmsh.model.occ.mesh.setSize([(self.type.value, self.tag)], self.mesh_size)
 
         return self.tag
 
     def after_sync(self, ctx: GeoContext):
-        ...
+        if self.mesh_size:
+            gmsh.model.mesh.setSize([(self.type.value, self.tag)], self.mesh_size)

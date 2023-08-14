@@ -18,12 +18,12 @@ class CurveLoop(GeoEntity):
     "tag of the curve loop when passing by reference"
 
     def __post_init__(self):
-        self.type = DimType.CURVE_LOOP
+        super().__init__(DimType.CURVE_LOOP)
 
     def set_label(self, label: str):
+        super().set_label(label)
         for curve in self.curves:
             curve.set_label(label)
-        super().set_label(label)
 
     def before_sync(self, ctx: GeoContext):
         if not self.is_synced:

@@ -5,7 +5,6 @@ from ezmesh.geometry.transactions import Point, PlaneSurface, Volume, Curve, Cur
 from ezmesh.geometry.transaction import GeoEntity
 from cadquery import Selector
 from cadquery.selectors import AndSelector, StringSyntaxSelector
-from ezmesh.geometry.transactions.curve import CircleProps, CurveProps
 from ezmesh.geometry.transactions.curve_loop import CurveLoop
 from cadquery.cq import CQObject
 
@@ -36,33 +35,26 @@ class OCPContext:
         else:
             raise NotImplementedError(f"shape {shape} not supported")
 
-    def add(self, shape: CQObject, child_shapes: Sequence[CQObject] = []):
-        child_entities = list(self.select_many(child_shapes)) if not isinstance(shape, cq.Vertex) else []
-        registry = self.get_registry(shape)
-        if shape not in registry:
+    def add(self, ocp_obj: CQObject, child_shapes: Sequence[CQObject] = []):
+        child_entities = list(self.select_many(child_shapes)) if not isinstance(ocp_obj, cq.Vertex) else []
+        registry = self.get_registry(ocp_obj)
+        if ocp_obj not in registry:
             next_tag = len(registry) + 1
-            if isinstance(shape, (cq.Compound, cq.Solid)): 
-                registry[shape] = Volume(cast(Sequence[SurfaceLoop], child_entities), tag=next_tag)
-            if isinstance(shape, cq.Shell): 
-                registry[shape] = SurfaceLoop(cast(Sequence[PlaneSurface], child_entities), tag=next_tag)
-            elif isinstance(shape, cq.Face):
-                registry[shape] = PlaneSurface(cast(Sequence[CurveLoop], child_entities), tag=next_tag)
-            elif isinstance(shape, cq.Wire):
-                registry[shape] = CurveLoop(cast(Sequence[Curve], child_entities), tag=next_tag)
-            elif isinstance(shape, cq.Edge):
+            if isinstance(ocp_obj, (cq.Compound, cq.Solid)): 
+                registry[ocp_obj] = Volume(cast(Sequence[SurfaceLoop], child_entities), tag=next_tag)
+            if isinstance(ocp_obj, cq.Shell): 
+                registry[ocp_obj] = SurfaceLoop(cast(Sequence[PlaneSurface], child_entities), tag=next_tag)
+            elif isinstance(ocp_obj, cq.Face):
+                registry[ocp_obj] = PlaneSurface(cast(Sequence[CurveLoop], child_entities), tag=next_tag)
+            elif isinstance(ocp_obj, cq.Wire):
+                registry[ocp_obj] = CurveLoop(cast(Sequence[Curve], child_entities), tag=next_tag)
+            elif isinstance(ocp_obj, cq.Edge):
                 points = cast(Sequence[Point], child_entities)
-                curve_type = shape.geomType()
-                # radii = [shape.radius()] if curve_type in ("CIRCLE", "ELLIPSE") else None
-                if curve_type == "CIRCLE":
-                    props = CircleProps(curve_type, points[0], shape.radius())
-                elif curve_type == "ELLIPSE":
-                    props = CircleProps(curve_type, points[0], shape.majorRadius(), shape.minorRadius())
-                else:
-                    props = CurveProps(curve_type, points)
-                registry[shape] = Curve(props, tag=next_tag)
-            elif isinstance(shape, cq.Vertex):
-                registry[shape] = Point((shape.X, shape.Y, shape.Z), tag=next_tag)
-            registry[shape].is_synced = True
+                registry[ocp_obj] = Curve(points, tag=next_tag)
+            elif isinstance(ocp_obj, cq.Vertex):
+                registry[ocp_obj] = Point((ocp_obj.X, ocp_obj.Y, ocp_obj.Z), tag=next_tag)
+            registry[ocp_obj].is_synced = True
+    
     def select(self, shape: CQObject):
         registry = self.get_registry(shape)
         return registry[shape]
@@ -145,8 +137,6 @@ def initialize_context_2d(target: Union[cq.Workplane, Sequence[CQObject]], ctx: 
                 ctx.add(ocp_edge, ocp_vertices)
             ctx.add(ocp_wire, ocp_edges)
         ctx.add(ocp_face, cq_wires)
-
-
 
 def initialize_context(workplane: cq.Workplane, ctx: OCPContext):
     if ctx.dimension == 3:

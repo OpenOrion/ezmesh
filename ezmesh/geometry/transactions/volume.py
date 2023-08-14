@@ -20,7 +20,7 @@ class Volume(GeoEntity):
     "tag of entity"
 
     def __post_init__(self):
-        self.type = DimType.VOLUME
+        super().__init__(DimType.VOLUME)
 
     def before_sync(self, ctx: GeoContext):
         if not self.is_synced:

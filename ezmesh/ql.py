@@ -3,12 +3,15 @@ import cadquery as cq
 from typing import Callable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
 from ezmesh import export_to_su2
-from ezmesh.geometry.transactions import Point, PlaneSurface
+from ezmesh.geometry.transactions import Point
+from ezmesh.geometry.transactions.curve import Curve
+from ezmesh.geometry.transactions.plane_surface import PlaneSurface
+from ezmesh.geometry.transactions.volume import Volume
 from ezmesh.mesh import Mesh
+from ezmesh.mesh.transactions.boundary_layer import BoundaryLayer
 from ezmesh.mesh.transactions.refinement import Recombine
 from ezmesh.utils.cadquery import OCPContext, initialize_context, initialize_gmsh_from_cq, intialize_workplane, get_selector, select_ocp_type
 from ezmesh.geometry.transaction import GeoEntity, GeoTransaction, GeoContext
-# from ezmesh.mesh.transactions.transfinite import ExtrudedBoundaryLayer
 from ezmesh.mesh.transaction import MeshTransaction, generate_mesh
 from jupyter_cadquery import show
 from ezmesh.mesh.visualizer import visualize_mesh
@@ -25,7 +28,7 @@ class Geometry:
 
     def generate(self, transactions: Union[GeoTransaction, Sequence[GeoTransaction]], mesh_transactions: Sequence[MeshTransaction] = []):
         transactions = transactions if isinstance(transactions, Sequence) else [transactions]
-        dim = 3 if isinstance(transactions[0], (cq.Compound, cq.Solid)) else 2
+        dim = 3 if isinstance(transactions[0], Volume) else 2
         ctx = GeoContext(dim)
         self.mesh = generate_mesh(transactions, mesh_transactions, ctx, dim)
         return self.mesh
@@ -64,7 +67,7 @@ class GeometryQL:
         else:
             self._workplane = target
         if isinstance(self._workplane.vals()[0], cq.Wire):
-            self._workplane = self._workplane.extrude(0.001).faces("<Z")
+            self._workplane = self._workplane.extrude(-0.001).faces(">Z")
         self._initial_workplane = self._workplane
 
         dim = 2 if isinstance(self._workplane.vals()[0], cq.Face) else 3
@@ -117,7 +120,7 @@ class GeometryQL:
         return self
 
     def vals(self):
-        return self._ocp_ctx.select_many(self._workplane.vals())
+        return list(self._ocp_ctx.select_many(self._workplane.vals()))
 
     def tag(self, name: str):
         self._workplane = self._workplane.tag(name)
@@ -133,7 +136,6 @@ class GeometryQL:
             entity.set_label(name)
         if tagWorkspace:
             self.tag(name)
-        # self.reset()
         return self
 
 
@@ -141,7 +143,6 @@ class GeometryQL:
         faces = cast(Sequence[cq.Face], select_ocp_type(self._workplane, cq.Face))
         surfaces = self._ocp_ctx.select_many(faces)
         self._mesh_transactions += [Recombine(surface, angle) for surface in surfaces]
-        # self.reset()
         return self
 
     def setMeshSize(self, mesh_size: Union[float, Callable[[Point], float]]):
@@ -151,18 +152,16 @@ class GeometryQL:
             if isinstance(mesh_size, Callable):
                 mesh_size = mesh_size(point)
             point.set_mesh_size(mesh_size)
-        # self.reset()
         return self
 
-    # def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
-    #     target = cast(Sequence[Union[PlaneSurface, Curve]], self.vals())
-    #     ext_bnd_layer = ExtrudedBoundaryLayer(target, num_layers, hwall_n, ratio)
-    #     self._transactions.append(ext_bnd_layer)
-    #     # self.reset()
-    #     return self
+    def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
+        target = cast(Sequence[Union[PlaneSurface, Curve]], self.vals())
+        ext_bnd_layer = BoundaryLayer(target, num_layers, hwall_n, ratio)
+        self._mesh_transactions.append(ext_bnd_layer)
+        return self
 
     def generate(self, dim: int = 3):
-        self._mesh = generate_mesh(list(self.vals()), self._mesh_transactions, self._geo_ctx, dim)
+        self._mesh = generate_mesh(self.vals(), self._mesh_transactions, self._geo_ctx, dim)
         self.end()
         return self
 
@@ -183,8 +182,7 @@ class GeometryQL:
             assert self._mesh is not None, "Mesh is not generated yet."
             visualize_mesh(self._mesh)
         elif type == "plot":
-            entities = self.vals()
-            plot_entities(list(entities))
+            plot_entities(self.vals())
         else:
             show(self._workplane)
         return self
