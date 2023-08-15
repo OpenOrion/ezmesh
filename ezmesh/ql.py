@@ -1,7 +1,7 @@
 import gmsh
 import cadquery as cq
 from cadquery.cq import CQObject
-from typing import Callable, Iterable, Literal, Optional, Union
+from typing import Callable, Iterable, Literal, Optional, Sequence, Union
 from cadquery.selectors import Selector
 from ezmesh.mesh.exporters import export_to_su2
 from ezmesh.occ import EntityType
@@ -67,25 +67,29 @@ class GeometryQL:
     def vals(self):
         return list(self._occ_map.select_entities(self._workplane.vals()))
 
-    def tag(self, name: str):
-        self._workplane = self._workplane.tag(name)
+    def tag(self, names: Union[str, Sequence[str]]):
+        if isinstance(names, str):
+            self._workplane.tag(names)
+        else:
+            for i, occ_obj in enumerate(self._workplane.vals()):
+                self._workplane.newObject([occ_obj]).tag(names[i])
         return self
 
-    def fromTagged(self, tag: Union[str, Iterable[str]], type: Optional[EntityType] = None, is_included: bool = True):        
-        if isinstance(tag, str) and type is None:
-            self._workplane = self._workplane._getTagged(tag)
+    def fromTagged(self, tags: Union[str, Iterable[str]], type: Optional[EntityType] = None, is_included: bool = True):        
+        if isinstance(tags, str) and type is None:
+            self._workplane = self._workplane._getTagged(tags)
         elif type is not None:
-            occ_tagged_objs = get_tagged_occ_objs(self._workplane, tag, type)
+            occ_tagged_objs = get_tagged_occ_objs(self._workplane, tags, type)
             occ_occ_objs = select_occ_objs(self._workplane, type)
             occ_filtered_objs = list(filter_occ_objs(occ_occ_objs, occ_tagged_objs, is_included))
             self._workplane = self._workplane.newObject(occ_filtered_objs)
 
         return self
 
-    def addPhysicalGroup(self, name: str, tagWorkspace: bool = True):
-        self._ctx.add_physical_groups(name, self.vals())
+    def addPhysicalGroup(self, names: Union[str, Sequence[str]], tagWorkspace: bool = True):
+        self._ctx.add_physical_groups(names, self.vals())
         if tagWorkspace:
-            self.tag(name)
+            self.tag(names)
         return self
 
     def recombine(self, angle: float = 45):

@@ -1,6 +1,6 @@
 import gmsh
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Union
 from ezmesh.utils.gmsh import DimType
 from ezmesh.mesh.importers import import_from_gmsh
 from ezmesh.mesh.mesh import Mesh
@@ -44,10 +44,10 @@ class TransactionContext:
         self.transactions: list[Transaction] = []
         self.mesh: Optional[Mesh] = None
 
-    def add_physical_groups(self, name: str, entites: Sequence[Entity]):
-        for entity in entites:
-            entity.name = name
-            group_id = (entity.dim_type, name)
+    def add_physical_groups(self, name: Union[str, Sequence[str]], entites: Sequence[Entity]):
+        for i, entity in enumerate(entites):
+            entity.name = name if isinstance(name, str) else name[i]
+            group_id = (entity.dim_type, entity.name)
             if group_id not in self.physical_groups:
                 self.physical_groups[group_id] = set()
             self.physical_groups[group_id].add(entity.tag)
