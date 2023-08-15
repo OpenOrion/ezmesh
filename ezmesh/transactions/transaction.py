@@ -2,17 +2,9 @@ import gmsh
 from dataclasses import dataclass
 from enum import Enum
 from typing import Iterable, Optional, Sequence
+from ezmesh.gmsh import DimType
 from ezmesh.mesh.importers import import_from_gmsh
 from ezmesh.mesh.mesh import Mesh
-
-class DimType(Enum):
-    POINT = 0
-    CURVE = 1
-    CURVE_LOOP = 1.5
-    SURFACE = 2
-    SURFACE_LOOP = 2.5
-    VOLUME = 3
-
 @dataclass
 class Transaction:
     def __post_init__(self):
@@ -35,6 +27,13 @@ class Entity:
     tag: int = -1
     "tag of the entity."
 
+    def __eq__(self, __value: object) -> bool:
+        if isinstance(__value, Entity):
+            return self.dim_type == __value.dim_type and self.tag == __value.tag
+        return False
+
+    def __hash__(self) -> int:
+        return self.tag
 
 class TransactionContext:
     def __init__(self):
@@ -53,7 +52,6 @@ class TransactionContext:
         self.transactions.append(transaction)
 
     def commit(self, dim: int = 3):
-        gmsh.model.occ.synchronize()
         for transaction in self.transactions:
             transaction.before_gen()
 
