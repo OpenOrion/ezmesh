@@ -4,7 +4,7 @@ from typing import Iterable, Optional, Sequence
 from ezmesh.transactions.transaction import DimType, Entity, Transaction
 
 @dataclass
-class TransfiniteCurveField(Transaction):
+class SetTransfiniteCurve(Transaction):
     curves: Iterable[Entity]
     "curves to be added to the boundary layer"
 
@@ -19,13 +19,13 @@ class TransfiniteCurveField(Transaction):
 
     def before_gen(self):
         for i, curve in enumerate(self.curves):
-            assert curve.dim_type == DimType.CURVE, "TransfiniteSurfaceField only accepts volumes"
+            assert curve.dim_type == DimType.CURVE, "SetTransfiniteCurve only accepts curves"
             mesh_type = self.mesh_types[i] if self.mesh_types is not None else "Progression"
             coef = self.coefs[i] if self.coefs is not None else 1.0
             gmsh.model.mesh.setTransfiniteCurve(curve.tag, self.node_counts[i]+1, mesh_type, coef)
 
 @dataclass
-class TransfiniteSurfaceField(Transaction):
+class SetTransfiniteSurface(Transaction):
     surfaces: Iterable[Entity]
     "surface to apply field"
 
@@ -34,7 +34,7 @@ class TransfiniteSurfaceField(Transaction):
 
     def before_gen(self):
         for surface in self.surfaces:
-            assert surface.dim_type == DimType.SURFACE, "TransfiniteSurfaceField only accepts volumes"
+            assert surface.dim_type == DimType.SURFACE, "SetTransfiniteSurface only accepts surfaces"
             gmsh.model.mesh.setTransfiniteSurface(surface.tag, self.arrangement)
 
 @dataclass

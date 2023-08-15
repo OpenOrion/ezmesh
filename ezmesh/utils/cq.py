@@ -1,12 +1,30 @@
+from dataclasses import dataclass
 import cadquery as cq
+from cadquery.cq import VectorLike
 import numpy as np
 from cadquery.cq import CQObject
-from typing import Iterable, Optional, Union
+from typing import Iterable, Optional, Sequence, Union, cast
 from plotly import graph_objects as go
-from ezmesh.occ import EntityType, OCCMap
+from ezmesh.occ import EntityType, OCCMap, select_occ_objs
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import NumpyFloat
+from jupyter_cadquery import show
+
+@dataclass
+class Region:
+    base_point: VectorLike
+    "base point of the plane"
+    
+    angles: VectorLike = (0,0,0)
+    "angle of plane"
+
+    top_tag: Optional[str] = None
+    "tag of the top region"
+
+    bottom_tag: Optional[str] = None
+    "tag of the bottom region"
+
 
 class InteriorSelector(cq.Selector):
     def __init__(self, workplane: cq.Workplane, is_interior: bool = True):
@@ -51,7 +69,38 @@ def get_selector(workplane: cq.Workplane, selector: Union[cq.Selector, str, None
             prev_selector = cq.selectors.AndSelector(prev_selector, selector)
         return prev_selector
 
-def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
+def split_worplane_regions(workplane: cq.Workplane, regions: Sequence[Region]):
+    solids_index: dict[tuple, str] = {}
+    for region in regions:
+        local_coords = cast(cq.Vector, workplane.plane.toLocalCoords(cq.Vector(region.base_point)))
+        transformed_workplane = workplane.transformed(offset=local_coords, rotate=region.angles)
+
+        initial_solid = transformed_workplane.findSolid()
+        maxDim = initial_solid.BoundingBox().DiagonalLength * 10.0
+        topCutBox = transformed_workplane.rect(maxDim, maxDim)._extrude(maxDim)
+        bottomCutBox = transformed_workplane.rect(maxDim, maxDim)._extrude(-maxDim)
+
+        top = initial_solid.cut(bottomCutBox)
+        bottom = initial_solid.cut(topCutBox)
+
+        for compound, tag in [(top, region.top_tag), (bottom, region.bottom_tag)]:
+            for solid in compound.Solids():
+                if tag and solid not in solids_index:
+                    print(tag)
+                    show(workplane.newObject([solid]))
+                    solids_index[solid.centerOfMass(solid).toTuple()] = tag
+
+        workplane = workplane.newObject([top, bottom])
+
+    for solid in workplane.solids().vals():
+        if (solid.centerOfMass(solid).toTuple()) in solids_index:
+            tag = solids_index[solid]
+            workplane.newObject([solid]).tag(tag)
+
+    return workplane
+
+
+def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]], regions: Optional[Sequence[Region]] = None):
     if isinstance(target, str):
         if target.lower().endswith(".step"):
             workplane = cq.importers.importStep(target)
@@ -66,6 +115,9 @@ def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
     if isinstance(workplane.val(), cq.Wire):
         workplane = cq.Workplane().newObject(workplane.extrude(-1).faces(">Z").vals())
 
+    if regions:
+        workplane = split_worplane_regions(workplane, regions)
+
     return workplane
 
 def tag_workplane_entities(workplane: cq.Workplane, occ_map: OCCMap):
@@ -74,32 +126,6 @@ def tag_workplane_entities(workplane: cq.Workplane, occ_map: OCCMap):
         for occ_obj in registry.entities.keys():
             tag = f"{registry_name}/{registry.entities[occ_obj].tag}"
             workplane.newObject([occ_obj]).tag(tag)
-
-def get_tagged_occ_objs(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: EntityType):
-    for tag in ([tags] if isinstance(tags, str) else tags):
-        yield from select_occ_objs(workplane._getTagged(tag), type)
-
-def select_occ_objs(workplane: cq.Workplane, type: EntityType):
-    for val in workplane.vals():
-        assert isinstance(val, cq.Shape), "target must be a shape"
-        if type == "solid":
-            yield from val.Solids()
-        elif type == "shell":
-            yield from val.Shells()
-        elif type == "face":
-            yield from val.Faces()
-        elif type == "wire":
-            yield from val.Wires()
-        elif type == "edge":
-            yield from val.Edges()
-        elif type == "vertex":
-            yield from val.Vertices()
-
-def filter_occ_objs(occ_objs: Iterable[CQObject], filter_objs: Iterable[CQObject], is_included: bool):
-    filter_objs = set(filter_objs)
-    for occ_obj in occ_objs:
-        if (is_included and occ_obj in filter_objs) or (not is_included and occ_obj not in filter_objs):
-            yield occ_obj
 
 
 def plot_workplane(

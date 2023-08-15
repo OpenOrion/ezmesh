@@ -1,17 +1,20 @@
+from dataclasses import dataclass
 import gmsh
 import cadquery as cq
 from cadquery.cq import CQObject
 from typing import Callable, Iterable, Literal, Optional, Sequence, Union
 from cadquery.selectors import Selector
 from ezmesh.mesh.exporters import export_to_su2
-from ezmesh.occ import EntityType
+from ezmesh.occ import EntityType, filter_occ_objs, select_occ_objs, select_tagged_occ_objs
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm
 from ezmesh.transactions.boundary_layer import BoundaryLayer
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
-from ezmesh.utils.cq import OCCMap, filter_occ_objs, select_occ_objs, get_selector, get_tagged_occ_objs, import_workplane, plot_workplane, tag_workplane_entities
+from ezmesh.transactions.transfinite import SetTransfiniteCurve, SetTransfiniteSurface, SetTransfiniteVolume
+from ezmesh.utils.cq import OCCMap, Region, get_selector, import_workplane, plot_workplane, tag_workplane_entities
 from ezmesh.transactions.transaction import TransactionContext
 from jupyter_cadquery import show
 from ezmesh.visualizer import visualize_mesh
+
 
 class GeometryQL:
     _workplane: cq.Workplane
@@ -30,11 +33,11 @@ class GeometryQL:
     def end(self):
         self._workplane = self._initial_workplane
         return self
-    
-    def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]]):
+
+    def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], regions: Optional[Sequence[Region]] = None):
         assert self._workplane is None, "Workplane is already loaded."
 
-        self._initial_workplane = self._workplane = import_workplane(target)
+        self._initial_workplane = self._workplane = import_workplane(target, regions)
 
         topods = self._workplane.toOCC()
         gmsh.model.occ.importShapesNativePointer(topods._address())
@@ -42,6 +45,11 @@ class GeometryQL:
         self._occ_map = OCCMap(self._workplane)
 
         tag_workplane_entities(self._workplane, self._occ_map)
+        return self    
+    
+    def solids(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None):
+        selector = get_selector(self._workplane, selector, is_interior)
+        self._workplane = self._workplane.solids(selector, tag)
         return self
 
     def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None):
@@ -65,7 +73,7 @@ class GeometryQL:
         return self
 
     def vals(self):
-        return list(self._occ_map.select_entities(self._workplane.vals()))
+        return list(self._occ_map.select_entities(self._workplane))
 
     def tag(self, names: Union[str, Sequence[str]]):
         if isinstance(names, str):
@@ -79,11 +87,10 @@ class GeometryQL:
         if isinstance(tags, str) and type is None:
             self._workplane = self._workplane._getTagged(tags)
         elif type is not None:
-            occ_tagged_objs = get_tagged_occ_objs(self._workplane, tags, type)
+            occ_tagged_objs = select_tagged_occ_objs(self._workplane, tags, type)
             occ_occ_objs = select_occ_objs(self._workplane, type)
-            occ_filtered_objs = list(filter_occ_objs(occ_occ_objs, occ_tagged_objs, is_included))
+            occ_filtered_objs = filter_occ_objs(occ_occ_objs, occ_tagged_objs, is_included)
             self._workplane = self._workplane.newObject(occ_filtered_objs)
-
         return self
 
     def addPhysicalGroup(self, names: Union[str, Sequence[str]], tagWorkspace: bool = True):
@@ -93,28 +100,25 @@ class GeometryQL:
         return self
 
     def recombine(self, angle: float = 45):
-        occ_faces = select_occ_objs(self._workplane, "face")
-        surfaces = self._occ_map.select_entities(occ_faces)
+        surfaces = self._occ_map.select_entities(self._workplane, "face")
         recombine = Recombine(surfaces, angle)
         self._ctx.add_transaction(recombine)
         return self
 
     def setMeshSize(self, size: Union[float, Callable[[float,float,float], float]]):
-        occ_vertices = select_occ_objs(self._workplane, "vertex")
-        points = self._occ_map.select_entities(occ_vertices)
+        points = self._occ_map.select_entities(self._workplane, "vertex")
         set_size = SetMeshSize(points, size)
         self._ctx.add_transaction(set_size)
         return self
 
     def setMeshAlgorithm(self, type: MeshAlgorithm2DType, per_face: bool = False):
-        occ_faces = select_occ_objs(self._workplane, "face")
-        surfaces = self._occ_map.select_entities(occ_faces)
+        surfaces = self._occ_map.select_entities(self._workplane, "face")
         set_algorithm = SetMeshAlgorithm(surfaces, type, per_face)
         self._ctx.add_transaction(set_algorithm)
         return self
 
     def smooth(self, num_smooths = 1):
-        surfaces = self._occ_map.select_entities(self._workplane.vals())
+        surfaces = self._occ_map.select_entities(self._workplane)
         set_smoothing = SetSmoothing(surfaces, num_smooths)
         self._ctx.add_transaction(set_smoothing)
         return self
@@ -123,6 +127,14 @@ class GeometryQL:
         refine = Refine(num_refines)
         self._ctx.add_transaction(refine)
         return self
+
+    # def setTransfiniteField(self):
+
+    #     surfaces = self._occ_map.select_entities(self._workplane, "face")
+
+    #     curve_field = SetTransfiniteCurve()
+    #     surface_field = SetTransfiniteSurface()
+    #     volume_field = SetTransfiniteVolume()
 
     def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
         boundary_layer = BoundaryLayer(self.vals(), num_layers, hwall_n, ratio)
