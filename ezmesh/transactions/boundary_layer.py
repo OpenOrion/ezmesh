@@ -5,8 +5,8 @@ from ezmesh.transactions.transaction import Entity, Transaction
 
 @dataclass
 class BoundaryLayer(Transaction):
-    entities: Sequence[Entity]
-    "target to be added to the boundary layer"
+    faces: Sequence[Entity]
+    "faces to be added to the boundary layer"
 
     num_layers: int
     "number of layers"
@@ -25,7 +25,7 @@ class BoundaryLayer(Transaction):
         for i in range(1, self.num_layers): 
             heights.append(heights[-1] + heights[0] * self.ratio**i)
         
-        dimTags = [(entity.dim_type.value, entity.tag) for entity in self.entities]
+        dimTags = [(entity.dim_type.value, entity.tag) for entity in self.faces]
         extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
 
         top = []

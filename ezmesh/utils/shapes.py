@@ -1,33 +1,8 @@
 from typing import Sequence
-from ezmesh.utils.types import Number, NumpyFloat
+from ezmesh.utils.types import Number
 from cadquery.cq import VectorLike
-import numpy.typing as npt
-from plotly import graph_objects as go
-
 import numpy as np
 
-def add_plot(coords: npt.NDArray[NumpyFloat], fig: go.Figure=go.Figure(), label: str="Plot"):
-    dim = 3 if np.all(coords[:,2]) else 2
-    if dim == 3:
-        fig.add_scatter3d(
-            x=coords[:,0],
-            y=coords[:,1],
-            z=coords[:,2],
-            name=label,
-            mode="lines+markers",
-            marker=dict(size=1)       
-        )
-    else:
-        fig.add_scatter(
-            x=coords[:,0],
-            y=coords[:,1],
-            name=label,
-            fill="toself",
-            mode="lines+markers",
-            marker=dict(size=1)       
-        )
-
-    return fig
 
 def get_sampling(start: Number, end: Number, num_samples: int, is_cosine_sampling: bool):
     if is_cosine_sampling:

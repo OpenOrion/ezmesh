@@ -7,8 +7,8 @@ from ezmesh.mesh.exporters import export_to_su2
 from ezmesh.occ import EntityType
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm
 from ezmesh.transactions.boundary_layer import BoundaryLayer
-from ezmesh.transactions.refinement import Recombine, Refine, SetSize
-from ezmesh.utils.cq import OCCMap, filter_occ_objs, get_selector, get_tagged_occ_objs, import_workplane, select_occ_type, tag_entities
+from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
+from ezmesh.utils.cq import OCCMap, filter_occ_objs, select_occ_objs, get_selector, get_tagged_occ_objs, import_workplane, plot_workplane, tag_workplane_entities
 from ezmesh.transactions.transaction import TransactionContext
 from jupyter_cadquery import show
 from ezmesh.visualizer import visualize_mesh
@@ -41,7 +41,7 @@ class GeometryQL:
         gmsh.model.occ.synchronize()
         self._occ_map = OCCMap(self._workplane)
 
-        tag_entities(self._workplane, self._occ_map)
+        tag_workplane_entities(self._workplane, self._occ_map)
         return self
 
     def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None):
@@ -60,6 +60,7 @@ class GeometryQL:
         return self
 
     def vertices(self, selector: Selector | str | None = None, tag: str | None = None):
+        selector = get_selector(self._workplane, selector)
         self._workplane = self._workplane.vertices(selector, tag)
         return self
 
@@ -75,8 +76,8 @@ class GeometryQL:
             self._workplane = self._workplane._getTagged(tag)
         elif type is not None:
             occ_tagged_objs = get_tagged_occ_objs(self._workplane, tag, type)
-            occ_selected_objs = select_occ_type(self._workplane, type)
-            occ_filtered_objs = list(filter_occ_objs(occ_selected_objs, occ_tagged_objs, is_included))
+            occ_occ_objs = select_occ_objs(self._workplane, type)
+            occ_filtered_objs = list(filter_occ_objs(occ_occ_objs, occ_tagged_objs, is_included))
             self._workplane = self._workplane.newObject(occ_filtered_objs)
 
         return self
@@ -88,25 +89,35 @@ class GeometryQL:
         return self
 
     def recombine(self, angle: float = 45):
-        surfaces = self._occ_map.select_entities(self._workplane.vals(), "face")
+        occ_faces = select_occ_objs(self._workplane, "face")
+        surfaces = self._occ_map.select_entities(occ_faces)
         recombine = Recombine(surfaces, angle)
         self._ctx.add_transaction(recombine)
+        return self
+
+    def setMeshSize(self, size: Union[float, Callable[[float,float,float], float]]):
+        occ_vertices = select_occ_objs(self._workplane, "vertex")
+        points = self._occ_map.select_entities(occ_vertices)
+        set_size = SetMeshSize(points, size)
+        self._ctx.add_transaction(set_size)
+        return self
+
+    def setMeshAlgorithm(self, type: MeshAlgorithm2DType, per_face: bool = False):
+        occ_faces = select_occ_objs(self._workplane, "face")
+        surfaces = self._occ_map.select_entities(occ_faces)
+        set_algorithm = SetMeshAlgorithm(surfaces, type, per_face)
+        self._ctx.add_transaction(set_algorithm)
+        return self
+
+    def smooth(self, num_smooths = 1):
+        surfaces = self._occ_map.select_entities(self._workplane.vals())
+        set_smoothing = SetSmoothing(surfaces, num_smooths)
+        self._ctx.add_transaction(set_smoothing)
         return self
 
     def refine(self, num_refines = 1):
         refine = Refine(num_refines)
         self._ctx.add_transaction(refine)
-        return self
-
-    def setMeshSize(self, size: Union[float, Callable[[float,float,float], float]]):
-        points = self._occ_map.select_entities(self._workplane.vals(), "vertex")
-        set_size = SetSize(points, size)
-        self._ctx.add_transaction(set_size)
-        return self
-
-    def setAlgorithm(self, type: MeshAlgorithm2DType):
-        set_algorithm = SetMeshAlgorithm(self.vals(), type)
-        self._ctx.add_transaction(set_algorithm)
         return self
 
     def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
@@ -135,8 +146,7 @@ class GeometryQL:
             assert self._ctx.mesh is not None, "Mesh is not generated yet."
             visualize_mesh(self._ctx.mesh)
         elif type == "plot":
-            ...
-            # plot_entities(self.vals())
+            plot_workplane(self._workplane, self._occ_map)
         else:
             show(self._workplane)
         return self

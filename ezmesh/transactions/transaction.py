@@ -1,10 +1,10 @@
 import gmsh
 from dataclasses import dataclass
-from enum import Enum
-from typing import Iterable, Optional, Sequence
-from ezmesh.gmsh import DimType
+from typing import Optional, Sequence
+from ezmesh.utils.gmsh import DimType
 from ezmesh.mesh.importers import import_from_gmsh
 from ezmesh.mesh.mesh import Mesh
+
 @dataclass
 class Transaction:
     def __post_init__(self):
@@ -27,6 +27,9 @@ class Entity:
     tag: int = -1
     "tag of the entity."
 
+    name: Optional[str] = None
+    "name of the entity."
+
     def __eq__(self, __value: object) -> bool:
         if isinstance(__value, Entity):
             return self.dim_type == __value.dim_type and self.tag == __value.tag
@@ -43,6 +46,7 @@ class TransactionContext:
 
     def add_physical_groups(self, name: str, entites: Sequence[Entity]):
         for entity in entites:
+            entity.name = name
             group_id = (entity.dim_type, name)
             if group_id not in self.physical_groups:
                 self.physical_groups[group_id] = set()
@@ -52,6 +56,7 @@ class TransactionContext:
         self.transactions.append(transaction)
 
     def commit(self, dim: int = 3):
+        gmsh.model.occ.synchronize()
         for transaction in self.transactions:
             transaction.before_gen()
 
@@ -61,9 +66,9 @@ class TransactionContext:
 
         gmsh.model.mesh.generate(dim)
 
-        for i, transaction in enumerate(self.transactions):
+        for transaction in self.transactions:
             transaction.after_gen()
-            self.transactions.pop(i)
-
+        
+        self.transactions = []
         self.mesh = import_from_gmsh()
 

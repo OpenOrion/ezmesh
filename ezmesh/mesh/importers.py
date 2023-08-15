@@ -1,5 +1,5 @@
 
-from ezmesh.gmsh import DimType
+from ezmesh.utils.gmsh import DimType
 from ezmesh.utils.types import NumpyFloat
 from .mesh import ElementType, Mesh
 import numpy.typing as npt

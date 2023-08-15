@@ -1,7 +1,7 @@
 import cadquery as cq
 from cadquery.cq import CQObject
 from typing import Iterable, Literal, Optional, OrderedDict, Sequence, cast
-from ezmesh.gmsh import DimType
+from ezmesh.utils.gmsh import DimType
 from ezmesh.transactions.transaction import Entity
 
 EntityType = Literal["solid", "shell", "face", "wire", "edge", "vertex"]
@@ -69,16 +69,13 @@ class OCCMap:
             tag = len(registry.entities) + 1
             registry.entities[occ_obj] = Entity(registry.dim_type, tag)
 
-    def select_entity(self, occ_obj: CQObject, type: Optional[EntityType] = None):
-        if type is None:
-            registry = self.get_registry(occ_obj)
-        else:
-            registry = self.registries[type]
+    def select_entity(self, occ_obj: CQObject):
+        registry = self.get_registry(occ_obj)
         return registry.entities[occ_obj]
     
-    def select_entities(self, occ_objs: Iterable[CQObject], type: Optional[EntityType] = None):
+    def select_entities(self, occ_objs: Iterable[CQObject]):
         for occ_obj in occ_objs:
             try:
-                yield self.select_entity(occ_obj, type)
+                yield self.select_entity(occ_obj)
             except:
                 ...
