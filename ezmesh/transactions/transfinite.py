@@ -18,6 +18,7 @@ class SetTransfiniteCurve(Transaction):
     "coefficients for each curve"
 
     def before_gen(self):
+        self.curves = list(self.curves)
         for i, curve in enumerate(self.curves):
             assert curve.dim_type == DimType.CURVE, "SetTransfiniteCurve only accepts curves"
             mesh_type = self.mesh_types[i] if self.mesh_types is not None else "Progression"

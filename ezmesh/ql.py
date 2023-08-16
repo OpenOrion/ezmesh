@@ -128,13 +128,23 @@ class GeometryQL:
         self._ctx.add_transaction(refine)
         return self
 
-    # def setTransfiniteField(self):
+    def setTransfiniteCurve(self, num_nodes: Sequence[int]):
+        curves = self._occ_map.select_entities(self._workplane, "edge")
+        set_transfinite_curve = SetTransfiniteCurve(curves, num_nodes)
+        self._ctx.add_transaction(set_transfinite_curve)
+        return self
 
-    #     surfaces = self._occ_map.select_entities(self._workplane, "face")
+    def setTransfiniteSurface(self, arrangement: str = "Left"):
+        surfaces = self._occ_map.select_entities(self._workplane, "face")
+        set_transfinite_surface = SetTransfiniteSurface(surfaces, arrangement)
+        self._ctx.add_transaction(set_transfinite_surface)
+        return self
 
-    #     curve_field = SetTransfiniteCurve()
-    #     surface_field = SetTransfiniteSurface()
-    #     volume_field = SetTransfiniteVolume()
+    def setTransfiniteVolume(self):
+        volumes = self._occ_map.select_entities(self._workplane, "solid")
+        set_transfinite_volume = SetTransfiniteVolume(volumes)
+        self._ctx.add_transaction(set_transfinite_volume)
+        return self
 
     def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
         boundary_layer = BoundaryLayer(self.vals(), num_layers, hwall_n, ratio)

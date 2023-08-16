@@ -58,11 +58,12 @@ class OCCMap:
             self._init_2d(workplane.vals())
 
     def _init_3d(self, objs: Sequence[CQObject]):
-        for solid in cast(Sequence[cq.Solid], objs):
-            for shell in solid.Shells():
-                self._init_2d(shell.Faces())
-                self.add_entity(shell)
-            self.add_entity(solid)
+        for compound in cast(Sequence[cq.Solid], objs):
+            for solid in compound.Solids():
+                for shell in solid.Shells():
+                    self._init_2d(shell.Faces())
+                    self.add_entity(shell)
+                self.add_entity(solid)
 
     def _init_2d(self, objs: Sequence[CQObject]):
         for occ_face in cast(Sequence[cq.Face], objs):
@@ -75,7 +76,7 @@ class OCCMap:
             self.add_entity(occ_face)
 
     def get_registry(self, shape: CQObject):
-        if isinstance(shape, (cq.Compound, cq.Solid)): 
+        if isinstance(shape, cq.Solid): 
             return self.registries["solid"]
         if isinstance(shape, cq.Shell): 
             return self.registries["shell"]
@@ -108,3 +109,12 @@ class OCCMap:
                 yield self.select_entity(occ_obj)
             except:
                 ...
+
+    # def select_batch_entities(self, target: Union[cq.Workplane, Iterable[CQObject]], type: Optional[EntityType] = None):
+    #     occ_objs = target.vals() if isinstance(target, cq.Workplane) else target
+    #     selected_occ_objs = occ_objs if type is None else select_occ_objs(occ_objs, type)
+    #     for occ_obj in selected_occ_objs:
+    #         try:
+    #             yield self.select_entity(occ_obj)
+    #         except:
+    #             ...

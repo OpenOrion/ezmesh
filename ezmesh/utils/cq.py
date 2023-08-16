@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 import cadquery as cq
-from cadquery.cq import VectorLike
 import numpy as np
-from cadquery.cq import CQObject
+from cadquery.cq import CQObject, VectorLike
 from typing import Iterable, Optional, Sequence, Union, cast
 from plotly import graph_objects as go
 from ezmesh.occ import EntityType, OCCMap, select_occ_objs
@@ -13,17 +12,11 @@ from jupyter_cadquery import show
 
 @dataclass
 class Region:
-    base_point: VectorLike
+    point: VectorLike = (0,0,0)
     "base point of the plane"
     
     angles: VectorLike = (0,0,0)
     "angle of plane"
-
-    top_tag: Optional[str] = None
-    "tag of the top region"
-
-    bottom_tag: Optional[str] = None
-    "tag of the bottom region"
 
 
 class InteriorSelector(cq.Selector):
@@ -70,33 +63,15 @@ def get_selector(workplane: cq.Workplane, selector: Union[cq.Selector, str, None
         return prev_selector
 
 def split_worplane_regions(workplane: cq.Workplane, regions: Sequence[Region]):
-    solids_index: dict[tuple, str] = {}
     for region in regions:
-        local_coords = cast(cq.Vector, workplane.plane.toLocalCoords(cq.Vector(region.base_point)))
-        transformed_workplane = workplane.transformed(offset=local_coords, rotate=region.angles)
-
-        initial_solid = transformed_workplane.findSolid()
-        maxDim = initial_solid.BoundingBox().DiagonalLength * 10.0
-        topCutBox = transformed_workplane.rect(maxDim, maxDim)._extrude(maxDim)
-        bottomCutBox = transformed_workplane.rect(maxDim, maxDim)._extrude(-maxDim)
-
-        top = initial_solid.cut(bottomCutBox)
-        bottom = initial_solid.cut(topCutBox)
-
-        for compound, tag in [(top, region.top_tag), (bottom, region.bottom_tag)]:
-            for solid in compound.Solids():
-                if tag and solid not in solids_index:
-                    print(tag)
-                    show(workplane.newObject([solid]))
-                    solids_index[solid.centerOfMass(solid).toTuple()] = tag
-
-        workplane = workplane.newObject([top, bottom])
-
-    for solid in workplane.solids().vals():
-        if (solid.centerOfMass(solid).toTuple()) in solids_index:
-            tag = solids_index[solid]
-            workplane.newObject([solid]).tag(tag)
-
+        angles_deg = (region.angles.toTuple() if isinstance(region.angles, cq.Vector) else region.angles)
+        workplane = workplane.split(cq.Face.makePlane(
+            None,
+            None,
+            cq.Vector(region.point), 
+            cq.Vector(tuple(np.radians(angles_deg)))
+        ))
+            
     return workplane
 
 
