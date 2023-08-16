@@ -1,11 +1,13 @@
 import gmsh
 from dataclasses import dataclass
-from typing import Optional, Sequence
-from ezmesh.transactions.transaction import Entity, Transaction
+from typing import Optional
+from ezmesh.entity import Entity
+from ezmesh.transaction import Transaction
+from ezmesh.utils.types import OrderedSet
 
 @dataclass
 class BoundaryLayer(Transaction):
-    faces: Sequence[Entity]
+    entities: OrderedSet[Entity]
     "faces to be added to the boundary layer"
 
     num_layers: int
@@ -25,7 +27,7 @@ class BoundaryLayer(Transaction):
         for i in range(1, self.num_layers): 
             heights.append(heights[-1] + heights[0] * self.ratio**i)
         
-        dimTags = [(entity.dim_type.value, entity.tag) for entity in self.faces]
+        dimTags = [(entity.type.value, entity.tag) for entity in self.entities]
         extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
 
         top = []
@@ -39,7 +41,7 @@ class BoundaryLayer(Transaction):
 
 @dataclass
 class BoundaryLayer2D(Transaction):
-    edges: Sequence[Entity]
+    entities: OrderedSet[Entity]
     "edges to be added to the boundary layer"
 
     aniso_max: Optional[float] = None
@@ -65,7 +67,7 @@ class BoundaryLayer2D(Transaction):
 
     def before_gen(self):
         self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
-        edge_tags = [edge.tag for edge in self.edges]
+        edge_tags = [edge.tag for edge in self.entities]
         gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', edge_tags)
         if self.aniso_max:
             gmsh.model.mesh.field.setNumber(self.tag, "AnisoMax", self.aniso_max)

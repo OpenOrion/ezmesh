@@ -1,8 +1,9 @@
 import cadquery as cq
 from cadquery.cq import CQObject
-from typing import Iterable, Literal, Optional, OrderedDict, Sequence, Union, cast
-from ezmesh.utils.gmsh import EntityType
-from ezmesh.transactions.transaction import Entity
+from typing import Iterable, Optional, OrderedDict, Sequence, Union, cast
+from ezmesh.entity import Entity, EntityType
+from ezmesh.utils.types import OrderedSet
+
 
 
 def select_tagged_occ_objs(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: EntityType):
@@ -121,14 +122,18 @@ class OCCMap:
         return registry.entities[occ_obj]
     
     def select_entities(self, target: Union[cq.Workplane, Iterable[CQObject]], type: Optional[EntityType] = None):
+        entities = OrderedSet[Entity]()
         occ_objs = target.vals() if isinstance(target, cq.Workplane) else target
         selected_occ_objs = occ_objs if type is None else select_occ_objs(occ_objs, type)
         for occ_obj in selected_occ_objs:
             try:
-                yield self.select_entity(occ_obj)
+                selected_entity = self.select_entity(occ_obj)
+                entities.add(selected_entity)
             except:
                 ...
 
+        return entities
+    
     def select_batch_entities(self, target: Union[cq.Workplane, Iterable[CQObject]], parent_type: EntityType, child_type: EntityType):
         occ_objs = target.vals() if isinstance(target, cq.Workplane) else target
         selected_occ_batches = select_batch_occ_objs(occ_objs, parent_type, child_type)

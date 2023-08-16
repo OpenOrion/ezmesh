@@ -1,9 +1,10 @@
 import gmsh
 from enum import Enum
 from dataclasses import dataclass
-from typing import Iterable, Literal
-from ezmesh.utils.gmsh import EntityType
-from ezmesh.transactions.transaction import Entity, Transaction
+from typing import Literal
+from ezmesh.entity import Entity, EntityType
+from ezmesh.transaction import Transaction
+from ezmesh.utils.types import OrderedSet
 
 class MeshAlgorithm2D(Enum):
     MeshAdapt = 1
@@ -48,7 +49,7 @@ MeshAlgorithm3DType =  Literal[
 
 @dataclass
 class SetMeshAlgorithm(Transaction):
-    entities: Iterable[Entity]
+    entities: OrderedSet[Entity]
     "Entity to set algorithm for"
 
     type: MeshAlgorithm2DType
@@ -60,8 +61,8 @@ class SetMeshAlgorithm(Transaction):
     def before_gen(self):
         for entity in self.entities:
             if self.per_face:
-                assert entity.dim_type == EntityType.face, "Can only set per face for edges"
-                gmsh.model.mesh.setAlgorithm(entity.dim_type.value, entity.tag, MeshAlgorithm2D[self.type].value)
+                assert entity.type == EntityType.face, "Can only set per face for edges"
+                gmsh.model.mesh.setAlgorithm(entity.type.value, entity.tag, MeshAlgorithm2D[self.type].value)
             else:
                 algo_val = MeshAlgorithm2D[self.type].value
                 gmsh.option.setNumber("Mesh.Algorithm", algo_val)
@@ -69,7 +70,7 @@ class SetMeshAlgorithm(Transaction):
 
 @dataclass
 class SetMeshAlgorithm3D(Transaction):
-    entities: Iterable[Entity]
+    entities: OrderedSet[Entity]
     "Entity to set algorithm for"
 
     type: MeshAlgorithm3DType

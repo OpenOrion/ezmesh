@@ -1,5 +1,5 @@
 
-from ezmesh.utils.gmsh import EntityType
+from ezmesh.entity import EntityType
 from ezmesh.utils.types import NumpyFloat
 from .mesh import ElementType, Mesh
 import numpy.typing as npt

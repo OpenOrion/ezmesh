@@ -1,11 +1,13 @@
-from typing import Callable, Iterable, Sequence, Union
 import gmsh
+from typing import Callable, Union
 from dataclasses import dataclass
-from ezmesh.transactions.transaction import EntityType, Entity, Transaction
+from ezmesh.entity import Entity
+from ezmesh.transaction import Transaction
+from ezmesh.utils.types import OrderedSet
 
 @dataclass
 class Recombine(Transaction):
-    entities: Iterable[Entity]
+    entities: OrderedSet[Entity]
     "Entities to recombine for"
 
     angle: float = 45
@@ -13,11 +15,11 @@ class Recombine(Transaction):
 
     def before_gen(self):
         for entity in self.entities:
-            gmsh.model.mesh.setRecombine(entity.dim_type.value, entity.tag, self.angle)
+            gmsh.model.mesh.setRecombine(entity.type.value, entity.tag, self.angle)
 
 @dataclass
 class SetSmoothing(Transaction):
-    entities: Iterable[Entity]
+    entities: OrderedSet[Entity]
     "Entities to smooth for"
     
     num_smooths: int = 1
@@ -25,7 +27,7 @@ class SetSmoothing(Transaction):
 
     def after_gen(self):
         for entity in self.entities:
-            gmsh.model.mesh.setSmoothing(entity.dim_type.value, entity.tag, self.num_smooths)
+            gmsh.model.mesh.setSmoothing(entity.type.value, entity.tag, self.num_smooths)
 
 
 @dataclass
@@ -39,14 +41,14 @@ class Refine(Transaction):
 
 @dataclass
 class SetMeshSize(Transaction):
-    entities: Iterable[Entity]
+    entities: OrderedSet[Entity]
     "Entities to set mesh sizes for"
 
     size: Union[float, Callable[[float, float, float], float]]
     "Size to set points"
 
     def before_gen(self):
-        point_tags = [(entity.dim_type.value, entity.tag) for entity in self.entities]
+        point_tags = [(entity.type.value, entity.tag) for entity in self.entities]
         if isinstance(self.size, float):
             gmsh.model.mesh.setSize(point_tags, self.size)
         else:

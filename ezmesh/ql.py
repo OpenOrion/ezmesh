@@ -1,28 +1,26 @@
-from dataclasses import dataclass
 import gmsh
 import cadquery as cq
 from cadquery.cq import CQObject
 from typing import Callable, Iterable, Literal, Optional, Sequence, Union
 from cadquery.selectors import Selector
-from ezmesh.mesh.exporters import export_to_su2
-from ezmesh.occ import EntityType, filter_occ_objs, select_occ_objs, select_tagged_occ_objs
+from ezmesh.context import Context
+from ezmesh.entity import EntityTypeString
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm
 from ezmesh.transactions.boundary_layer import BoundaryLayer
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
-from ezmesh.transactions.transfinite import ArrangementType, SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid
-from ezmesh.utils.cq import OCCMap, Parition, get_selector, import_workplane, plot_workplane, tag_workplane_entities
-from ezmesh.transactions.transaction import TransactionContext
-from jupyter_cadquery import show
-from ezmesh.utils.gmsh import EntityTypeString
+from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType
+from ezmesh.mesh.exporters import export_to_su2
+from ezmesh.occ import EntityType, OCCMap, filter_occ_objs, select_occ_objs, select_tagged_occ_objs
+from ezmesh.cq import Parition, get_selector, import_workplane, plot_workplane, tag_workplane_entities
 from ezmesh.visualizer import visualize_mesh
-
+from jupyter_cadquery import show
 
 class GeometryQL:
     _workplane: cq.Workplane
     _initial_workplane: cq.Workplane
     def __init__(self) -> None:
         self._initial_workplane = self._workplane = None # type: ignore
-        self._ctx = TransactionContext()
+        self._ctx = Context()
 
     def __enter__(self):
         gmsh.initialize()
@@ -74,7 +72,7 @@ class GeometryQL:
         return self
 
     def vals(self):
-        return list(self._occ_map.select_entities(self._workplane))
+        return self._occ_map.select_entities(self._workplane)
 
     def tag(self, names: Union[str, Sequence[str]]):
         if isinstance(names, str):
@@ -96,7 +94,8 @@ class GeometryQL:
         return self
 
     def addPhysicalGroup(self, names: Union[str, Sequence[str]], tagWorkspace: bool = True):
-        self._ctx.add_physical_groups(names, self.vals())
+        for name in (names if isinstance(names, Sequence) else [names]):
+            self._ctx.add_physical_group(name, self.vals())
         if tagWorkspace:
             self.tag(names)
         return self
@@ -130,27 +129,35 @@ class GeometryQL:
         self._ctx.add_transaction(refine)
         return self
 
-    def setTransfiniteEdge(self, num_nodes: Sequence[int]):
+    def setTransfiniteEdge(self, num_nodes: Sequence[int], mesh_type: Union[TransfiniteMeshType, Sequence[TransfiniteMeshType]] = "Progression", coef: Union[float, Sequence[float]] = 1.0):
         edge_batch = self._occ_map.select_batch_entities(self._workplane, EntityType.face, EntityType.edge)
-        for edge in edge_batch:
-            set_transfinite_edge = SetTransfiniteEdge(edge, num_nodes)
+        for edges in edge_batch:
+            set_transfinite_edge = SetTransfiniteEdge(edges, num_nodes, mesh_type, coef)
             self._ctx.add_transaction(set_transfinite_edge)
+
         return self
 
-    def setTransfiniteFace(self, arrangement: ArrangementType = "Left"):
+    def setTransfiniteFace(self, arrangement: TransfiniteArrangementType = "Left"):
         face_batch = self._occ_map.select_batch_entities(self._workplane, EntityType.solid, EntityType.face)
-        for face in face_batch:
-            set_transfinite_face = SetTransfiniteFace(face, arrangement)
+        for faces in face_batch:
+            set_transfinite_face = SetTransfiniteFace(faces, arrangement)
             self._ctx.add_transaction(set_transfinite_face)
+
         return self
 
-    def setTransfiniteSolid(self, num_nodes: Optional[Sequence[int]] = None, arrangement: ArrangementType = "Left"):            
+    def setTransfiniteSolid(
+        self, 
+        num_nodes: Optional[Sequence[int]] = None, 
+        mesh_type: Union[TransfiniteMeshType, Sequence[TransfiniteMeshType]] = "Progression", 
+        coef: Union[float, Sequence[float]] = 1.0, 
+        arrangement: TransfiniteArrangementType = "Left"
+    ):            
         solids = self._occ_map.select_entities(self._workplane, EntityType.solid)
         set_transfinite_solid = SetTransfiniteSolid(solids)
         self._ctx.add_transaction(set_transfinite_solid)
         if num_nodes is not None:
             self.setTransfiniteFace(arrangement)
-            self.setTransfiniteEdge(num_nodes)
+            self.setTransfiniteEdge(num_nodes, mesh_type, coef)
         return self
 
     def addBoundaryLayer(self, num_layers: int, hwall_n: float, ratio: float):
@@ -181,7 +188,7 @@ class GeometryQL:
         elif type == "plot":
             plot_workplane(self._workplane, self._occ_map)
         else:
-            show(self._workplane)
+            show(self._workplane, theme="dark")
         return self
 
 
