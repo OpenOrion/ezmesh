@@ -25,8 +25,7 @@ class SetTransfiniteEdge(EntityTransaction):
     def before_gen(self):
         for i, edge in enumerate(self.entities):
             assert edge.type == EntityType.edge, "SetTransfiniteEdge only accepts edges"
-            mesh_type = self.mesh_types[i] if isinstance(self.mesh_types, Sequence) else self.mesh_types
-            # mesh_type = self.mesh_types[i] if self.mesh_types is not None else "Progression"
+            mesh_type = self.mesh_types if isinstance(self.mesh_types, str) else self.mesh_types[i]
             coef = self.coefs[i] if isinstance(self.coefs, Sequence) else self.coefs
             gmsh.model.mesh.setTransfiniteCurve(edge.tag, self.node_counts[i]+1, mesh_type, coef)
 

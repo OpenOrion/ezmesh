@@ -102,6 +102,10 @@ class GeometryQL:
             self.tag(names)
         return self
 
+    # def ignore(self):
+    #     self._ctx.ignore(self.vals())
+    #     return self
+
     def recombine(self, angle: float = 45):
         faces = self._occ_map.select_entities(self._workplane, EntityType.face)
         recombine = Recombine(faces, angle)
@@ -133,6 +137,7 @@ class GeometryQL:
 
     def setTransfiniteEdge(self, num_nodes: Sequence[int], mesh_type: Union[TransfiniteMeshType, Sequence[TransfiniteMeshType]] = "Progression", coef: Union[float, Sequence[float]] = 1.0):
         edge_batch = self._occ_map.select_batch_entities(self._workplane, EntityType.face, EntityType.edge)
+        edge_batch = list(edge_batch)
         for edges in edge_batch:
             set_transfinite_edge = SetTransfiniteEdge(edges, num_nodes, mesh_type, coef)
             self._ctx.add_transaction(set_transfinite_edge)

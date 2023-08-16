@@ -40,7 +40,7 @@ class Entity:
         return False
 
     def __hash__(self) -> int:
-        return self.tag
+        return hash((self.type, self.tag))
 
 @dataclass(eq=False)
 class EntityTransaction(Transaction):
