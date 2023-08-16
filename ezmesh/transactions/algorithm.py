@@ -2,7 +2,7 @@ import gmsh
 from enum import Enum
 from dataclasses import dataclass
 from typing import Literal
-from ezmesh.entity import Entity, EntityType
+from ezmesh.entity import Entity, EntityTransaction, EntityType
 from ezmesh.transaction import Transaction
 from ezmesh.utils.types import OrderedSet
 
@@ -47,8 +47,8 @@ MeshAlgorithm3DType =  Literal[
     "HXT"
 ]
 
-@dataclass
-class SetMeshAlgorithm(Transaction):
+@dataclass(eq=False)
+class SetMeshAlgorithm(EntityTransaction):
     entities: OrderedSet[Entity]
     "Entity to set algorithm for"
 
@@ -68,8 +68,8 @@ class SetMeshAlgorithm(Transaction):
                 gmsh.option.setNumber("Mesh.Algorithm", algo_val)
 
 
-@dataclass
-class SetMeshAlgorithm3D(Transaction):
+@dataclass(eq=False)
+class SetMeshAlgorithm3D(EntityTransaction):
     entities: OrderedSet[Entity]
     "Entity to set algorithm for"
 

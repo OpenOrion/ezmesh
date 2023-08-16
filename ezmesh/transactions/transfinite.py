@@ -1,14 +1,14 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Literal, Sequence, Union
-from ezmesh.entity import Entity, EntityType
-from ezmesh.transaction import Transaction
+from ezmesh.entity import Entity, EntityTransaction, EntityType
 from ezmesh.utils.types import OrderedSet
 
 TransfiniteArrangementType = Literal["Left", "Right", "AlternateLeft", "AlternateRight"]
 TransfiniteMeshType = Literal["Progression", "Bump"]
-@dataclass
-class SetTransfiniteEdge(Transaction):
+
+@dataclass(eq=False)
+class SetTransfiniteEdge(EntityTransaction):
     entities: OrderedSet[Entity]
     "edges to be added to the boundary layer"
 
@@ -30,8 +30,8 @@ class SetTransfiniteEdge(Transaction):
             coef = self.coefs[i] if isinstance(self.coefs, Sequence) else self.coefs
             gmsh.model.mesh.setTransfiniteCurve(edge.tag, self.node_counts[i]+1, mesh_type, coef)
 
-@dataclass
-class SetTransfiniteFace(Transaction):
+@dataclass(eq=False)
+class SetTransfiniteFace(EntityTransaction):
     entities: OrderedSet[Entity]
     "face to apply field"
 
@@ -43,8 +43,8 @@ class SetTransfiniteFace(Transaction):
             assert face.type == EntityType.face, "SetTransfiniteFace only accepts faces"
             gmsh.model.mesh.setTransfiniteSurface(face.tag, self.arrangement)
 
-@dataclass
-class SetTransfiniteSolid(Transaction):
+@dataclass(eq=False)
+class SetTransfiniteSolid(EntityTransaction):
     entities: OrderedSet[Entity]
     "face to apply field"
 
@@ -52,3 +52,4 @@ class SetTransfiniteSolid(Transaction):
         for solid in self.entities:
             assert solid.type == EntityType.solid, "SetTransfiniteSolid only accepts solids"
             gmsh.model.mesh.setTransfiniteVolume(solid.tag)
+

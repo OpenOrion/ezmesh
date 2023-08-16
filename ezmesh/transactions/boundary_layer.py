@@ -1,12 +1,11 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional
-from ezmesh.entity import Entity
-from ezmesh.transaction import Transaction
+from ezmesh.entity import Entity, EntityTransaction
 from ezmesh.utils.types import OrderedSet
 
-@dataclass
-class BoundaryLayer(Transaction):
+@dataclass(eq=False)
+class BoundaryLayer(EntityTransaction):
     entities: OrderedSet[Entity]
     "faces to be added to the boundary layer"
 
@@ -39,8 +38,8 @@ class BoundaryLayer(Transaction):
         gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
 
 
-@dataclass
-class BoundaryLayer2D(Transaction):
+@dataclass(eq=False)
+class BoundaryLayer2D(EntityTransaction):
     entities: OrderedSet[Entity]
     "edges to be added to the boundary layer"
 

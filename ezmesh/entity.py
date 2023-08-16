@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal, Optional, Protocol, Union
 
+from ezmesh.transaction import Transaction
+
 
 EntityTypeString = Literal["compound", "solid", "shell", "face", "wire", "edge", "vertex"]
 
@@ -39,15 +41,8 @@ class Entity:
 
     def __hash__(self) -> int:
         return self.tag
-    
-class EntityTransaction(Protocol):
-    entities: set[Entity]
-    is_commited: bool
-    is_generated: bool
-    def before_gen(self):
-        "completes transaction before mesh generation."
-        ...
 
-    def after_gen(self):
-        "completes transaction after mesh generation."
-        ...
+@dataclass(eq=False)
+class EntityTransaction(Transaction):
+    entities: set[Entity]
+    "The entities that will be added to the physical group."

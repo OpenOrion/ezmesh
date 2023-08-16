@@ -1,31 +1,28 @@
 import gmsh
 from dataclasses import dataclass
-from ezmesh.entity import Entity
+from ezmesh.entity import Entity, EntityTransaction
 from ezmesh.transaction import Transaction
 from ezmesh.utils.types import OrderedSet
 
 
-@dataclass
-class SetPhysicalGroup(Transaction):    
+@dataclass(eq=False)
+class SetPhysicalGroup(EntityTransaction):
     entities: OrderedSet[Entity]
     "The entities that will be added to the physical group."
 
     name: str
     "The name of the physical group."
 
-    # TODO: clean this up
+    def __post_init__(self):
+        super().__post_init__()
+        self.entity_type = self.entities.first.type.value
 
     def before_gen(self):
         entity_tags = []
-        entity_types = set()
-        entity_type = None
         for entity in self.entities:
+            assert entity.type == self.entities.first.type, "all entities must be of the same type"
             entity.name = self.name
-            entity_type = entity.type
-        
             entity_tags.append(entity.tag)
-            entity_types.add(entity.type)
-        
-        assert len(entity_types) == 1, "All entities must be of the same type"
-        physical_group_tag = gmsh.model.addPhysicalGroup(entity_type, entity_tags)
-        gmsh.model.set_physical_name(entity_type, physical_group_tag, self.name)
+
+        physical_group_tag = gmsh.model.addPhysicalGroup(self.entities.first.type.value, entity_tags)
+        gmsh.model.set_physical_name(self.entity_type, physical_group_tag, self.name)

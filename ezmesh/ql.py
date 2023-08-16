@@ -7,6 +7,7 @@ from ezmesh.context import Context
 from ezmesh.entity import EntityTypeString
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm
 from ezmesh.transactions.boundary_layer import BoundaryLayer
+from ezmesh.transactions.physical_group import SetPhysicalGroup
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType
 from ezmesh.mesh.exporters import export_to_su2
@@ -94,8 +95,9 @@ class GeometryQL:
         return self
 
     def addPhysicalGroup(self, names: Union[str, Sequence[str]], tagWorkspace: bool = True):
-        for name in (names if isinstance(names, Sequence) else [names]):
-            self._ctx.add_physical_group(name, self.vals())
+        for name in (names if isinstance(names, str) else names):
+            set_physical_group = SetPhysicalGroup(self.vals(), name)
+            self._ctx.add_transaction(set_physical_group)
         if tagWorkspace:
             self.tag(names)
         return self
