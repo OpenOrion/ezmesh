@@ -2,16 +2,15 @@ from dataclasses import dataclass
 import cadquery as cq
 import numpy as np
 from cadquery.cq import CQObject, VectorLike
-from typing import Iterable, Optional, Sequence, Union, cast
+from typing import Iterable, Optional, Sequence, Union
 from plotly import graph_objects as go
 from ezmesh.occ import EntityType, OCCMap, select_occ_objs
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import NumpyFloat
-from jupyter_cadquery import show
 
 @dataclass
-class Region:
+class Parition:
     point: VectorLike = (0,0,0)
     "base point of the plane"
     
@@ -62,7 +61,7 @@ def get_selector(workplane: cq.Workplane, selector: Union[cq.Selector, str, None
             prev_selector = cq.selectors.AndSelector(prev_selector, selector)
         return prev_selector
 
-def split_worplane_regions(workplane: cq.Workplane, regions: Sequence[Region]):
+def split_worplane_regions(workplane: cq.Workplane, regions: Sequence[Parition]):
     for region in regions:
         angles_deg = (region.angles.toTuple() if isinstance(region.angles, cq.Vector) else region.angles)
         workplane = workplane.split(cq.Face.makePlane(
@@ -75,7 +74,7 @@ def split_worplane_regions(workplane: cq.Workplane, regions: Sequence[Region]):
     return workplane
 
 
-def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]], regions: Optional[Sequence[Region]] = None):
+def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]], regions: Optional[Sequence[Parition]] = None):
     if isinstance(target, str):
         if target.lower().endswith(".step"):
             workplane = cq.importers.importStep(target)
@@ -99,7 +98,7 @@ def tag_workplane_entities(workplane: cq.Workplane, occ_map: OCCMap):
     "Tag all gmsh entity tags to workplane"
     for registry_name, registry in occ_map.registries.items():
         for occ_obj in registry.entities.keys():
-            tag = f"{registry_name}/{registry.entities[occ_obj].tag}"
+            tag = f"{registry_name.name}/{registry.entities[occ_obj].tag}"
             workplane.newObject([occ_obj]).tag(tag)
 
 
@@ -112,8 +111,8 @@ def plot_workplane(
     fig = go.Figure(
         layout=go.Layout(title=go.layout.Title(text=title))
     )
-    edges = select_occ_objs(workplane, "edge")
-    registry = occ_map.registries["edge"]
+    edges = select_occ_objs(workplane, EntityType.edge)
+    registry = occ_map.registries[EntityType.edge]
     for edge in edges:
         edge_entity = registry.entities[edge]
         edge_name = registry.entities[edge].name or f"Edge{edge_entity.tag}"

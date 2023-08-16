@@ -1,5 +1,5 @@
 
-from ezmesh.utils.gmsh import DimType
+from ezmesh.utils.gmsh import EntityType
 from ezmesh.utils.types import NumpyFloat
 from .mesh import ElementType, Mesh
 import numpy.typing as npt
@@ -75,7 +75,7 @@ def import_from_gmsh() -> Mesh:
     physical_groups = gmsh.model.getPhysicalGroups()
     for group_dim, group_tag in physical_groups:
         marker_name = gmsh.model.getPhysicalName(group_dim, group_tag)
-        if len(marker_name) == 0 or group_dim == DimType.VOLUME.value:
+        if len(marker_name) == 0 or group_dim == EntityType.solid.value:
             continue
         entities = gmsh.model.getEntitiesForPhysicalGroup(group_dim, group_tag)
         for entity in entities:

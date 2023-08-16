@@ -1,7 +1,7 @@
 from typing import Callable, Iterable, Sequence, Union
 import gmsh
 from dataclasses import dataclass
-from ezmesh.transactions.transaction import DimType, Entity, Transaction
+from ezmesh.transactions.transaction import EntityType, Entity, Transaction
 
 @dataclass
 class Recombine(Transaction):

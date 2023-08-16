@@ -82,7 +82,7 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
                 for i in range(len(elements)):
                     line_from_to = (elements[i], elements[i+1]) if i+1 < len(elements) else (elements[-1], elements[0])
                     
-                    # only allow mesh line label override if line is appart of edge if already labeled for surface mesh line
+                    # only allow mesh line label override if line is appart of edge if already labeled for edge mesh line
                     if (line_from_to in marker_elements_to_name and is_line) or line_from_to not in marker_elements_to_name:
                         marker_elements_to_name[line_from_to] = marker_name
 

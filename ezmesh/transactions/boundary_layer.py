@@ -39,8 +39,8 @@ class BoundaryLayer(Transaction):
 
 @dataclass
 class BoundaryLayer2D(Transaction):
-    curves: Sequence[Entity]
-    "target to be added to the boundary layer"
+    edges: Sequence[Entity]
+    "edges to be added to the boundary layer"
 
     aniso_max: Optional[float] = None
     "threshold angle for creating a mesh fan in the boundary layer"
@@ -58,15 +58,15 @@ class BoundaryLayer2D(Transaction):
     "maximal thickness of the boundary layer"
 
     intersect_metrics: bool = False
-    "intersect metrics of all surfaces"
+    "intersect metrics of all faces"
 
     is_quad_mesh: bool = False
     "generate recombined elements in the boundary layer"
 
     def before_gen(self):
         self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
-        curve_tags = [curve.tag for curve in self.curves]
-        gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', curve_tags)
+        edge_tags = [edge.tag for edge in self.edges]
+        gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', edge_tags)
         if self.aniso_max:
             gmsh.model.mesh.field.setNumber(self.tag, "AnisoMax", self.aniso_max)
         if self.intersect_metrics:

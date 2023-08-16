@@ -1,7 +1,7 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional, Sequence, Union
-from ezmesh.utils.gmsh import DimType
+from ezmesh.utils.gmsh import EntityType
 from ezmesh.mesh.importers import import_from_gmsh
 from ezmesh.mesh.mesh import Mesh
 
@@ -21,7 +21,7 @@ class Transaction:
 
 @dataclass
 class Entity:
-    dim_type: DimType
+    dim_type: EntityType
     "dimension type of the entity."
     
     tag: int = -1
@@ -40,7 +40,7 @@ class Entity:
 
 class TransactionContext:
     def __init__(self):
-        self.physical_groups: dict[tuple[DimType, str], set[int]] = {}
+        self.physical_groups: dict[tuple[EntityType, str], set[int]] = {}
         self.transactions: list[Transaction] = []
         self.mesh: Optional[Mesh] = None
 
