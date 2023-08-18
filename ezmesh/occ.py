@@ -97,8 +97,10 @@ class OCCMap:
 
     def init_interior(self, target: Union[cq.Workplane, Sequence[CQObject]]):
         objs = target.vals() if isinstance(target, cq.Workplane) else target
-        faces = select_occ_objs(objs, EntityType.face)
+        faces = list(select_occ_objs(objs, EntityType.face))
         for face in faces:
+            for interior_occ_wire in face.innerWires():
+                self.add_interior_wire(interior_occ_wire)
             assert isinstance(face, cq.Face), "object must be a face"
             is_interior = is_interior_face(face)
             if is_interior:
@@ -106,9 +108,14 @@ class OCCMap:
                 for occ_edge in face.Edges():
                     self.interior.add(occ_edge)
                 for occ_wire in face.Wires():
-                    self.interior.add(occ_wire)
-                for occ_vertex in face.Vertices():
-                    self.interior.add(occ_vertex)
+                    self.add_interior_wire(occ_wire)
+
+    def add_interior_wire(self, interior_occ_wire: cq.Wire):
+        self.interior.add(interior_occ_wire)
+        for edge in interior_occ_wire.Edges():
+            self.interior.add(edge)
+        for occ_vertex in interior_occ_wire.Vertices():
+            self.interior.add(occ_vertex)
 
     def init_3d_objs(self, target: Union[cq.Workplane, Sequence[CQObject]]):
         objs = target.vals() if isinstance(target, cq.Workplane) else target
