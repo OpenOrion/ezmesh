@@ -4,46 +4,44 @@ import numpy as np
 from cadquery.cq import CQObject, VectorLike
 from typing import Iterable, Optional, Sequence, Union
 from plotly import graph_objects as go
-from ezmesh.occ import EntityType, OCCMap, select_occ_objs
+from ezmesh.occ import EntityType, OCCMap, select_occ_objs, select_batch_occ_objs
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import NumpyFloat
 
 @dataclass
 class Parition:
-    point: VectorLike = (0,0,0)
+    base_point: VectorLike = (0,0,0)
     "base point of the plane"
-    
+
     angles: VectorLike = (0,0,0)
     "angle of plane"
 
+    @staticmethod
+    def from_segment(start_point: VectorLike, end_point: VectorLike):
+        return Parition(
+            base_point=start_point,
+            angles=cq.Vector(end_point) - cq.Vector(start_point)
+        )
+
+class IndexSelector(cq.Selector):
+    def __init__(self, indices: Sequence[int]):
+        self.indices = indices
+    def filter(self, objectList):
+        return [objectList[i] for i in self.indices]
 
 class InteriorSelector(cq.Selector):
-    def __init__(self, workplane: cq.Workplane, is_interior: bool = True):
-        self.workplane = workplane
+    def __init__(self, occ_map: OCCMap, is_interior: bool = True):
+        self.occ_map = occ_map
         self.is_interior = is_interior
     def filter(self, objectList):
-        parent_objects = self.workplane.vals()
-        if len(parent_objects) == 1 and isinstance(parent_objects[0], cq.Face): 
-            return InteriorSelector.get_interior_edges(objectList[0], parent_objects[0], self.is_interior)
-        return filter(lambda object: self.is_interior == InteriorSelector.get_interior_face(object), objectList)
+        filtered_objs = []
+        for obj in objectList:
+            if (self.is_interior and obj in self.occ_map.interior) or (not self.is_interior and obj not in self.occ_map.interior):
+                filtered_objs.append(obj)
+        return filtered_objs
 
-    @staticmethod
-    def get_interior_face(object: cq.Face):
-        face_normal = object.normalAt()
-        face_centroid = object.Center()
-        interior_dot_product = face_normal.dot(face_centroid)
-        return interior_dot_product < 0
-
-    @staticmethod
-    def get_interior_edges(object: Union[cq.Face, cq.Wire], parent: cq.Face, is_interior: bool):
-        wires = parent.innerWires() if is_interior else [parent.outerWire()]
-        if isinstance(object, cq.Wire): 
-            return wires
-        elif isinstance(object, cq.Edge):
-            return [edge for  wire in wires for edge in wire.Edges()]
-
-def get_selector(workplane: cq.Workplane, selector: Union[cq.Selector, str, None], is_interior: Optional[bool] = None, index: Optional[int] = None):
+def get_selector(occ_map: OCCMap, selector: Union[cq.Selector, str, None], indices: Optional[Sequence[int]] = None, is_interior: Optional[bool] = None):
     selectors = []
     if isinstance(selector, str):
         selector = selectors.append(cq.StringSyntaxSelector(selector))
@@ -51,9 +49,9 @@ def get_selector(workplane: cq.Workplane, selector: Union[cq.Selector, str, None
         selectors.append(selector)
 
     if is_interior is not None:
-        selectors.append(InteriorSelector(workplane, is_interior))
-    if index is not None:
-        selectors.append(cq.selectors.AreaNthSelector(index))
+        selectors.append(InteriorSelector(occ_map, is_interior))
+    if indices is not None:
+        selectors.append(IndexSelector(indices))
 
     if len(selectors) > 0:
         prev_selector = selectors[0]
@@ -61,20 +59,20 @@ def get_selector(workplane: cq.Workplane, selector: Union[cq.Selector, str, None
             prev_selector = cq.selectors.AndSelector(prev_selector, selector)
         return prev_selector
 
-def split_worplane_regions(workplane: cq.Workplane, regions: Sequence[Parition]):
+def get_partitioned_workplane(workplane: cq.Workplane, regions: Sequence[Parition]):
     for region in regions:
         angles_deg = (region.angles.toTuple() if isinstance(region.angles, cq.Vector) else region.angles)
         workplane = workplane.split(cq.Face.makePlane(
             None,
             None,
-            cq.Vector(region.point), 
+            cq.Vector(region.base_point), 
             cq.Vector(tuple(np.radians(angles_deg)))
         ))
             
     return workplane
 
 
-def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]], regions: Optional[Sequence[Parition]] = None):
+def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
     if isinstance(target, str):
         if target.lower().endswith(".step"):
             workplane = cq.importers.importStep(target)
@@ -89,8 +87,7 @@ def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]], regio
     if isinstance(workplane.val(), cq.Wire):
         workplane = cq.Workplane().newObject(workplane.extrude(-1).faces(">Z").vals())
 
-    if regions:
-        workplane = split_worplane_regions(workplane, regions)
+    workplane.tag("root")
 
     return workplane
 

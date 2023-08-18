@@ -67,6 +67,9 @@ class SetMeshAlgorithm(EntityTransaction):
                 algo_val = MeshAlgorithm2D[self.type].value
                 gmsh.option.setNumber("Mesh.Algorithm", algo_val)
 
+        gmsh.option.setNumber("Mesh.MaxIterDelaunay3D", 100)
+        # gmsh.option.setNumber("Mesh.QuadqsTopologyOptimizationMethods", 100)
+
 
 @dataclass(eq=False)
 class SetMeshAlgorithm3D(EntityTransaction):

@@ -12,7 +12,7 @@ from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSm
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType
 from ezmesh.mesh.exporters import export_to_su2
 from ezmesh.occ import EntityType, OCCMap, filter_occ_objs, select_occ_objs, select_tagged_occ_objs
-from ezmesh.cq import Parition, get_selector, import_workplane, plot_workplane, tag_workplane_entities
+from ezmesh.cq import Parition, get_partitioned_workplane, get_selector, import_workplane, plot_workplane, tag_workplane_entities
 from ezmesh.visualizer import visualize_mesh
 from jupyter_cadquery import show
 
@@ -30,45 +30,53 @@ class GeometryQL:
     def __exit__(self, exc_type, exc_val, exc_tb):
         gmsh.finalize()
 
-    def end(self):
-        self._workplane = self._initial_workplane
+    def end(self, num: Optional[int] = None):
+        if num is None:
+            self._workplane = self._initial_workplane
+        else:
+            self._workplane = self._workplane.end(num)
         return self
 
     def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], partitions: Optional[Sequence[Parition]] = None):
         assert self._workplane is None, "Workplane is already loaded."
 
-        self._initial_workplane = self._workplane = import_workplane(target, partitions)
+        self._pre_partition_workplane = workplane = import_workplane(target)
 
+        if partitions:
+            workplane = get_partitioned_workplane(self._pre_partition_workplane, partitions)
+
+        self._workplane = self._initial_workplane = workplane
+        self._occ_map = OCCMap(self._workplane)
+        self._occ_map.init_interior(self._pre_partition_workplane)
         topods = self._workplane.toOCC()
         gmsh.model.occ.importShapesNativePointer(topods._address())
         gmsh.model.occ.synchronize()
-        self._occ_map = OCCMap(self._workplane)
 
         tag_workplane_entities(self._workplane, self._occ_map)
         return self    
     
-    def solids(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None):
-        selector = get_selector(self._workplane, selector, is_interior)
+    def solids(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None, indices: Optional[Sequence[int]] = None):
+        selector = get_selector(self._occ_map, selector, indices, is_interior)
         self._workplane = self._workplane.solids(selector, tag)
         return self
 
-    def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None):
-        selector = get_selector(self._workplane, selector, is_interior)
+    def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None, indices: Optional[Sequence[int]] = None):
+        selector = get_selector(self._occ_map, selector, indices, is_interior)
         self._workplane = self._workplane.faces(selector, tag)
         return self
     
-    def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None):
-        selector = get_selector(self._workplane, selector, is_interior)
+    def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None, indices: Optional[Sequence[int]] = None):
+        selector = get_selector(self._occ_map, selector, indices, is_interior)
         self._workplane = self._workplane.edges(selector, tag)
         return self
 
-    def wires(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None):
-        selector = get_selector(self._workplane, selector, is_interior)
+    def wires(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, is_interior: Optional[bool] = None, indices: Optional[Sequence[int]] = None):
+        selector = get_selector(self._occ_map, selector, indices, is_interior)
         self._workplane = self._workplane.wires(selector, tag)
         return self
 
-    def vertices(self, selector: Selector | str | None = None, tag: str | None = None):
-        selector = get_selector(self._workplane, selector)
+    def vertices(self, selector: Selector | str | None = None, tag: str | None = None, indices: Optional[Sequence[int]] = None):
+        selector = get_selector(self._occ_map, selector, indices)
         self._workplane = self._workplane.vertices(selector, tag)
         return self
 
@@ -83,14 +91,14 @@ class GeometryQL:
                 self._workplane.newObject([occ_obj]).tag(names[i])
         return self
 
-    def fromTagged(self, tags: Union[str, Iterable[str]], type: Optional[EntityTypeString] = None, is_included: bool = True):        
+    def fromTagged(self, tags: Union[str, Iterable[str]], type: Optional[EntityTypeString] = None, invert: bool = True):        
         if isinstance(tags, str) and type is None:
             self._workplane = self._workplane._getTagged(tags)
         elif type is not None:
             entity_type = EntityType.resolve(type)
             occ_tagged_objs = select_tagged_occ_objs(self._workplane, tags, entity_type)
             occ_occ_objs = select_occ_objs(self._workplane, entity_type)
-            occ_filtered_objs = filter_occ_objs(occ_occ_objs, occ_tagged_objs, is_included)
+            occ_filtered_objs = filter_occ_objs(occ_occ_objs, occ_tagged_objs, invert)
             self._workplane = self._workplane.newObject(occ_filtered_objs)
         return self
 
@@ -135,19 +143,22 @@ class GeometryQL:
         self._ctx.add_transaction(refine)
         return self
 
-    def setTransfiniteEdge(self, num_nodes: Sequence[int], mesh_type: Union[TransfiniteMeshType, Sequence[TransfiniteMeshType]] = "Progression", coef: Union[float, Sequence[float]] = 1.0):
+    def setTransfiniteEdge(self, num_nodes: Union[Sequence[int], int], mesh_type: Union[TransfiniteMeshType, Sequence[TransfiniteMeshType]] = "Progression", coef: Union[float, Sequence[float]] = 1.0):
         edge_batch = self._occ_map.select_batch_entities(self._workplane, EntityType.face, EntityType.edge)
-        edge_batch = list(edge_batch)
         for edges in edge_batch:
             set_transfinite_edge = SetTransfiniteEdge(edges, num_nodes, mesh_type, coef)
             self._ctx.add_transaction(set_transfinite_edge)
 
         return self
 
-    def setTransfiniteFace(self, arrangement: TransfiniteArrangementType = "Left"):
+    def setTransfiniteFace(self, arrangement: TransfiniteArrangementType = "Left", corner_indexes: Sequence[int] = []):
+        vertex_batch = list(self._occ_map.select_batch_entities(self._workplane, EntityType.face, EntityType.vertex))
+
         face_batch = self._occ_map.select_batch_entities(self._workplane, EntityType.solid, EntityType.face)
-        for faces in face_batch:
-            set_transfinite_face = SetTransfiniteFace(faces, arrangement)
+        for i, faces in enumerate(face_batch):
+            vertexes = list(vertex_batch[i])
+            ordered_tags = [vertexes[corner_index].tag for corner_index in corner_indexes]
+            set_transfinite_face = SetTransfiniteFace(faces, arrangement, ordered_tags)
             self._ctx.add_transaction(set_transfinite_face)
 
         return self

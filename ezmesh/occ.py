@@ -59,45 +59,68 @@ def select_batch_occ_objs(target: Union[cq.Workplane, Iterable[CQObject]], paren
         for parent_occ_obj in parent_occ_objs:
             yield select_occ_objs([parent_occ_obj], child_type)
 
-def filter_occ_objs(occ_objs: Iterable[CQObject], filter_objs: Iterable[CQObject], is_included: bool):
+def filter_occ_objs(occ_objs: Iterable[CQObject], filter_objs: Iterable[CQObject], invert: bool):
     filter_objs = set(filter_objs)
     for occ_obj in occ_objs:
-        if (is_included and occ_obj in filter_objs) or (not is_included and occ_obj not in filter_objs):
+        if (invert and occ_obj in filter_objs) or (not invert and occ_obj not in filter_objs):
             yield occ_obj
 
-class OCCRegistry:
-    def __init__(self, dim_type: EntityType) -> None:
-        self.dim_type = dim_type
-        self.entities = OrderedDict[CQObject, Entity]()
+def is_interior_face(face: CQObject, invert: bool = False):
+    assert isinstance(face, cq.Face), "object must be a face"
+    face_normal = face.normalAt()
+    face_centroid = face.Center()
+    interior_dot_product = face_normal.dot(face_centroid)
+    return (not invert and interior_dot_product < 0) or (invert and interior_dot_product >= 0)
 
+class OCCRegistry:
+    def __init__(self) -> None:
+        self.entities = OrderedDict[CQObject, Entity]()
 class OCCMap:
     "Maps OCC objects to gmsh tags"
     def __init__(self, workplane: cq.Workplane) -> None:
         self.dimension = 2 if isinstance(workplane.val(), cq.Face) else 3
+        self.interior = OrderedSet[CQObject]()
 
         self.registries: dict[EntityType, OCCRegistry] = {
-            EntityType.solid: OCCRegistry(EntityType.solid),
-            EntityType.shell: OCCRegistry(EntityType.shell),
-            EntityType.face:  OCCRegistry(EntityType.face),
-            EntityType.wire: OCCRegistry(EntityType.wire),
-            EntityType.edge: OCCRegistry(EntityType.edge),
-            EntityType.vertex: OCCRegistry(EntityType.vertex),
+            EntityType.solid: OCCRegistry(),
+            EntityType.shell: OCCRegistry(),
+            EntityType.face:  OCCRegistry(),
+            EntityType.wire: OCCRegistry(),
+            EntityType.edge: OCCRegistry(),
+            EntityType.vertex: OCCRegistry(),
         }
 
         if self.dimension == 3:
-            self._init_3d(workplane.vals())
+            self.init_3d_objs(workplane)
         else:
-            self._init_2d(workplane.vals())
+            self.init_2d_objs(workplane)
 
-    def _init_3d(self, objs: Sequence[CQObject]):
+    def init_interior(self, target: Union[cq.Workplane, Sequence[CQObject]]):
+        objs = target.vals() if isinstance(target, cq.Workplane) else target
+        faces = select_occ_objs(objs, EntityType.face)
+        for face in faces:
+            assert isinstance(face, cq.Face), "object must be a face"
+            is_interior = is_interior_face(face)
+            if is_interior:
+                self.interior.add(face)
+                for occ_edge in face.Edges():
+                    self.interior.add(occ_edge)
+                for occ_wire in face.Wires():
+                    self.interior.add(occ_wire)
+                for occ_vertex in face.Vertices():
+                    self.interior.add(occ_vertex)
+
+    def init_3d_objs(self, target: Union[cq.Workplane, Sequence[CQObject]]):
+        objs = target.vals() if isinstance(target, cq.Workplane) else target
         for compound in cast(Sequence[cq.Solid], objs):
             for solid in compound.Solids():
                 for shell in solid.Shells():
-                    self._init_2d(shell.Faces())
+                    self.init_2d_objs(shell.Faces())
                     self.add_entity(shell)
                 self.add_entity(solid)
 
-    def _init_2d(self, objs: Sequence[CQObject]):
+    def init_2d_objs(self, target: Union[cq.Workplane, Sequence[CQObject]]):
+        objs = target.vals() if isinstance(target, cq.Workplane) else target
         for occ_face in cast(Sequence[cq.Face], objs):
             for occ_wire in [occ_face.outerWire(), *occ_face.innerWires()]:
                 for occ_edge in occ_wire.Edges():
@@ -107,18 +130,17 @@ class OCCMap:
                 self.add_entity(occ_wire)
             self.add_entity(occ_face)
 
-    def get_registry(self, shape: CQObject):
-        entity_type = get_entity_type(shape)
-        return self.registries[entity_type]
-
     def add_entity(self, occ_obj: CQObject):
-        registry = self.get_registry(occ_obj)
+        entity_type = get_entity_type(occ_obj)
+        registry = self.registries[entity_type]
         if occ_obj not in registry.entities:
             tag = len(registry.entities) + 1
-            registry.entities[occ_obj] = Entity(registry.dim_type, tag)
+            registry.entities[occ_obj] = Entity(entity_type, tag)
+
 
     def select_entity(self, occ_obj: CQObject):
-        registry = self.get_registry(occ_obj)
+        entity_type = get_entity_type(occ_obj)
+        registry = self.registries[entity_type]
         return registry.entities[occ_obj]
     
     def select_entities(self, target: Union[cq.Workplane, Iterable[CQObject]], type: Optional[EntityType] = None):
