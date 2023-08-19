@@ -1,33 +1,31 @@
 import gmsh
 from typing import Callable, Union
 from dataclasses import dataclass
-from ezmesh.entity import Entity, EntityTransaction
+from ezmesh.entity import Entity, SingleEntityTransaction, MultiEntityTransaction
 from ezmesh.transaction import Transaction
 from ezmesh.utils.types import OrderedSet
 
 @dataclass(eq=False)
-class Recombine(EntityTransaction):
-    entities: OrderedSet[Entity]
-    "Entities to recombine for"
+class Recombine(SingleEntityTransaction):
+    entity: Entity
+    "Entity to recombine for"
 
     angle: float = 45
     "Angle to recombine with"
 
     def before_gen(self):
-        for entity in self.entities:
-            gmsh.model.mesh.setRecombine(entity.type.value, entity.tag, self.angle)
+        gmsh.model.mesh.setRecombine(self.entity.type.value, self.entity.tag, self.angle)
 
 @dataclass(eq=False)
-class SetSmoothing(EntityTransaction):
-    entities: OrderedSet[Entity]
-    "Entities to smooth for"
+class SetSmoothing(SingleEntityTransaction):
+    entity: Entity
+    "Entity to smooth for"
     
     num_smooths: int = 1
     "Number of times to smooth the mesh"
 
     def after_gen(self):
-        for entity in self.entities:
-            gmsh.model.mesh.setSmoothing(entity.type.value, entity.tag, self.num_smooths)
+        gmsh.model.mesh.setSmoothing(self.entity.type.value, self.entity.tag, self.num_smooths)
 
 
 @dataclass(eq=False)
@@ -40,7 +38,7 @@ class Refine(Transaction):
             gmsh.model.mesh.refine()
 
 @dataclass(eq=False)
-class SetMeshSize(EntityTransaction):
+class SetMeshSize(MultiEntityTransaction):
     entities: OrderedSet[Entity]
     "Entities to set mesh sizes for"
 

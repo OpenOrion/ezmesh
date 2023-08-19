@@ -1,18 +1,18 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional
-from ezmesh.entity import Entity, EntityTransaction
+from ezmesh.entity import Entity, MultiEntityTransaction
 from ezmesh.utils.types import OrderedSet
 
 @dataclass(eq=False)
-class BoundaryLayer(EntityTransaction):
+class BoundaryLayer(MultiEntityTransaction):
     entities: OrderedSet[Entity]
     "faces to be added to the boundary layer"
 
     num_layers: int
     "number of layers"
 
-    hwall_n: float
+    wall_height: float
     "mesh size normal to the the wall"
 
     ratio: float
@@ -22,7 +22,7 @@ class BoundaryLayer(EntityTransaction):
     "generate recombined elements in the boundary layer"
 
     def before_gen(self):
-        heights = [self.hwall_n]
+        heights = [self.wall_height]
         for i in range(1, self.num_layers): 
             heights.append(heights[-1] + heights[0] * self.ratio**i)
         
@@ -38,8 +38,9 @@ class BoundaryLayer(EntityTransaction):
         gmsh.model.geo.addCurveLoop([c[1] for c in bnd])
 
 
+
 @dataclass(eq=False)
-class BoundaryLayer2D(EntityTransaction):
+class BoundaryLayer2D(MultiEntityTransaction):
     entities: OrderedSet[Entity]
     "edges to be added to the boundary layer"
 

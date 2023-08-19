@@ -1,12 +1,12 @@
 import gmsh
 from dataclasses import dataclass
-from ezmesh.entity import Entity, EntityTransaction
+from ezmesh.entity import Entity, MultiEntityTransaction
 from ezmesh.transaction import Transaction
 from ezmesh.utils.types import OrderedSet
 
 
 @dataclass(eq=False)
-class SetPhysicalGroup(EntityTransaction):
+class SetPhysicalGroup(MultiEntityTransaction):
     entities: OrderedSet[Entity]
     "The entities that will be added to the physical group."
 

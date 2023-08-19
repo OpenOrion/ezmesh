@@ -2,7 +2,7 @@ import gmsh
 from enum import Enum
 from dataclasses import dataclass
 from typing import Literal
-from ezmesh.entity import Entity, EntityTransaction, EntityType
+from ezmesh.entity import Entity, SingleEntityTransaction, EntityType
 from ezmesh.transaction import Transaction
 from ezmesh.utils.types import OrderedSet
 
@@ -48,8 +48,8 @@ MeshAlgorithm3DType =  Literal[
 ]
 
 @dataclass(eq=False)
-class SetMeshAlgorithm(EntityTransaction):
-    entities: OrderedSet[Entity]
+class SetMeshAlgorithm(SingleEntityTransaction):
+    entity: Entity
     "Entity to set algorithm for"
 
     type: MeshAlgorithm2DType
@@ -59,30 +59,27 @@ class SetMeshAlgorithm(EntityTransaction):
     "if True, set algorithm per face, otherwise for whole system"
 
     def before_gen(self):
-        for entity in self.entities:
-            if self.per_face:
-                assert entity.type == EntityType.face, "Can only set per face for edges"
-                gmsh.model.mesh.setAlgorithm(entity.type.value, entity.tag, MeshAlgorithm2D[self.type].value)
-            else:
-                algo_val = MeshAlgorithm2D[self.type].value
-                gmsh.option.setNumber("Mesh.Algorithm", algo_val)
-
-        gmsh.option.setNumber("Mesh.MaxIterDelaunay3D", 100)
-        # gmsh.option.setNumber("Mesh.QuadqsTopologyOptimizationMethods", 100)
+        if self.per_face:
+            assert self.entity.type == EntityType.face, "Can only set per face for edges"
+            gmsh.model.mesh.setAlgorithm(self.entity.type.value, self.entity.tag, MeshAlgorithm2D[self.type].value)
+        else:
+            algo_val = MeshAlgorithm2D[self.type].value
+            gmsh.option.setNumber("Mesh.Algorithm", algo_val)
 
 
-@dataclass(eq=False)
-class SetMeshAlgorithm3D(EntityTransaction):
-    entities: OrderedSet[Entity]
-    "Entity to set algorithm for"
 
-    type: MeshAlgorithm3DType
-    "algorithm to use"
+# @dataclass(eq=False)
+# class SetMeshAlgorithm3D(EntityTransaction):
+#     entities: OrderedSet[Entity]
+#     "Entity to set algorithm for"
 
-    def before_gen(self):
-        # for entity in self.entities:
-        #     algo_val = MeshAlgorithm3D[self.type].value if isinstance(entity, Volume) else MeshAlgorithm2D[self.type].value
-        #     gmsh.model.mesh.setAlgorithm(entity.type.value, entity.tag, algo_val)
-        algo_val = MeshAlgorithm3D[self.type].value
-        gmsh.option.setNumber("Mesh.Algorithm3D", algo_val)
+#     type: MeshAlgorithm3DType
+#     "algorithm to use"
+
+#     def before_gen(self):
+#         # for entity in self.entities:
+#         #     algo_val = MeshAlgorithm3D[self.type].value if isinstance(entity, Volume) else MeshAlgorithm2D[self.type].value
+#         #     gmsh.model.mesh.setAlgorithm(entity.type.value, entity.tag, algo_val)
+#         algo_val = MeshAlgorithm3D[self.type].value
+#         gmsh.option.setNumber("Mesh.Algorithm3D", algo_val)
 

@@ -1,9 +1,10 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Literal, Optional, Protocol, Union
+from typing import Literal, Optional, Union
 
 from ezmesh.transaction import Transaction
+from ezmesh.utils.types import OrderedSet
 
 
 EntityTypeString = Literal["compound", "solid", "shell", "face", "wire", "edge", "vertex"]
@@ -43,6 +44,11 @@ class Entity:
         return hash((self.type, self.tag))
 
 @dataclass(eq=False)
-class EntityTransaction(Transaction):
-    entities: set[Entity]
-    "The entities that will be added to the physical group."
+class SingleEntityTransaction(Transaction):
+    entity: Entity
+    "The entity that transaction will be applied towards"
+
+@dataclass(eq=False)
+class MultiEntityTransaction(Transaction):
+    entities: OrderedSet[Entity]
+    "The entities that transaction will be applied towards"

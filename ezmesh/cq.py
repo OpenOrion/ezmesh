@@ -37,7 +37,7 @@ class InteriorSelector(cq.Selector):
     def filter(self, objectList):
         filtered_objs = []
         for obj in objectList:
-            if (self.is_interior and obj in self.occ_map.interior) or (not self.is_interior and obj not in self.occ_map.interior):
+            if (self.is_interior and obj in self.occ_map.interior) or (not self.is_interior and obj in self.occ_map.exterior):
                 filtered_objs.append(obj)
         return filtered_objs
 

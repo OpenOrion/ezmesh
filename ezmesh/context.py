@@ -1,7 +1,7 @@
 from enum import Enum
 import gmsh
-from typing import Optional, OrderedDict
-from ezmesh.entity import Entity, EntityTransaction, EntityType
+from typing import Optional, OrderedDict, Sequence
+from ezmesh.entity import Entity, MultiEntityTransaction, SingleEntityTransaction
 from ezmesh.mesh.importers import import_from_gmsh
 from ezmesh.mesh.mesh import Mesh
 from ezmesh.transaction import Transaction
@@ -16,19 +16,30 @@ class Context:
 
         self.mesh: Optional[Mesh] = None
     
+    def get_transaction(self, transaction_type: type[Transaction], entity: Optional[Entity] = None) -> Optional[Transaction]:
+        if entity is None:
+            return self.system_transactions.get(transaction_type)
+        else:
+            return self.entity_transactions.get((transaction_type, entity))
+
     def add_transaction(self, transaction: Transaction):
-        if isinstance(transaction, EntityTransaction):
-            for entity in transaction.entities:
+        if isinstance(transaction, (SingleEntityTransaction, MultiEntityTransaction) ):
+            entities = transaction.entities if isinstance(transaction, MultiEntityTransaction) else OrderedSet([transaction.entity])
+            for entity in entities:
                 transaction_id = (type(transaction), entity)
                 if transaction_id not in self.entity_transactions:
                     self.entity_transactions[transaction_id] = transaction
                 else:
                     old_transaction = self.entity_transactions[transaction_id]
-                    assert isinstance(old_transaction, EntityTransaction), "old transaction must be of type EntityTransaction"
-                    old_transaction.entities.remove(entity)
+                    if isinstance(old_transaction, MultiEntityTransaction):
+                        old_transaction.entities.remove(entity)
                     self.entity_transactions[transaction_id] = transaction
         else:
             self.system_transactions[type(transaction)] = transaction
+
+    def add_transactions(self, transactions: Sequence[Transaction]):
+        for transaction in transactions:
+            self.add_transaction(transaction)
 
     def commit(self, dim: int = 3):
         gmsh.model.occ.synchronize()
