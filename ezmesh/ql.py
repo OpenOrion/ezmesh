@@ -77,8 +77,8 @@ class GeometryQL:
         self._workplane = self._workplane.wires(selector, tag)
         return self
 
-    def vertices(self, selector: Selector | str | None = None, tag: str | None = None, indices: Optional[Sequence[int]] = None):
-        selector = get_selector(self._occ_map, selector, indices)
+    def vertices(self, selector: Selector | str | None = None, tag: str | None = None, is_interior: Optional[bool] = None, indices: Optional[Sequence[int]] = None):
+        selector = get_selector(self._occ_map, selector, indices, is_interior)
         self._workplane = self._workplane.vertices(selector, tag)
         return self
 

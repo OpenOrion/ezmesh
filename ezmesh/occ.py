@@ -1,10 +1,13 @@
 import cadquery as cq
 from cadquery.cq import CQObject
+from cadquery.occ_impl.shapes import TopAbs_Orientation
 from typing import Iterable, Optional, OrderedDict, Sequence, Union, cast
 from ezmesh.entity import Entity, EntityType
 from ezmesh.utils.types import OrderedSet
 
-
+def get_is_face_reversed(face: CQObject):
+    assert isinstance(face, cq.Face), "object must be a face"
+    return face.wrapped.Orientation() == TopAbs_Orientation.TopAbs_REVERSED
 
 def select_tagged_occ_objs(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: EntityType):
     for tag in ([tags] if isinstance(tags, str) else tags):
@@ -80,6 +83,7 @@ class OCCMap:
     def __init__(self, workplane: cq.Workplane) -> None:
         self.dimension = 2 if isinstance(workplane.val(), cq.Face) else 3
         self.interior = OrderedSet[CQObject]()
+        self.exterior = OrderedSet[CQObject]()
 
         self.registries: dict[EntityType, OCCRegistry] = {
             EntityType.solid: OCCRegistry(),
@@ -98,24 +102,37 @@ class OCCMap:
     def init_interior(self, target: Union[cq.Workplane, Sequence[CQObject]]):
         objs = target.vals() if isinstance(target, cq.Workplane) else target
         faces = list(select_occ_objs(objs, EntityType.face))
-        for face in faces:
-            for interior_occ_wire in face.innerWires():
-                self.add_interior_wire(interior_occ_wire)
-            assert isinstance(face, cq.Face), "object must be a face"
-            is_interior = is_interior_face(face)
-            if is_interior:
-                self.interior.add(face)
-                for occ_edge in face.Edges():
-                    self.interior.add(occ_edge)
-                for occ_wire in face.Wires():
+        if len(faces) > 0:
+            for face in faces:
+                assert isinstance(face, cq.Face), "object must be a face"
+                interior_face = is_interior_face(face) 
+                if interior_face:
+                    self.add_interior_face(face)
+                else:
+                    self.add_interior_face(face, invert=True)
+
+                for occ_wire in face.innerWires():
                     self.add_interior_wire(occ_wire)
 
-    def add_interior_wire(self, interior_occ_wire: cq.Wire):
-        self.interior.add(interior_occ_wire)
-        for edge in interior_occ_wire.Edges():
-            self.interior.add(edge)
-        for occ_vertex in interior_occ_wire.Vertices():
-            self.interior.add(occ_vertex)
+                self.add_interior_wire(face.outerWire(), invert=not interior_face)
+
+    def add_interior_face(self, face: cq.Face, invert: bool = False):
+        interior_idx = self.interior if not invert else self.exterior
+        interior_idx.add(face)
+
+        # for occ_wire in face.Wires():
+        #     self.add_interior_wire(occ_wire, invert=invert)
+
+    def add_interior_wire(self, occ_wire: cq.Wire, invert: bool = False):
+        index_set = self.interior if not invert else self.exterior
+        opp_index_set = self.exterior if not invert else self.interior
+        index_set.add(occ_wire)
+        for occ_edge in occ_wire.Edges():
+            if occ_edge not in opp_index_set:
+                index_set.add(occ_edge)
+        for occ_vertex in occ_wire.Vertices():
+            if occ_vertex not in opp_index_set:
+                index_set.add(occ_vertex)
 
     def init_3d_objs(self, target: Union[cq.Workplane, Sequence[CQObject]]):
         objs = target.vals() if isinstance(target, cq.Workplane) else target
