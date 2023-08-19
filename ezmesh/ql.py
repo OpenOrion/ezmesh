@@ -199,13 +199,10 @@ class GeometryQL:
                 transaction = self._ctx.get_transaction(SetTransfiniteEdge, edge)
                 assert isinstance(transaction, SetTransfiniteEdge), "setTransfiniteAuto must be invoked before addBoundaryLayer."
                 occ_vertices = occ_edge.Vertices()
-                if occ_vertices[0] in boundary_occ_vertices or occ_vertices[-1] in boundary_occ_vertices:
-                    if occ_vertices[0] in boundary_occ_vertices:
-                        transaction.coef = -0.85
-                    elif occ_vertices[-1] in boundary_occ_vertices:
-                        transaction.coef = 0.85
-                    else:
-                        raise Exception("This should not happen.")
+                if occ_vertices[0] in boundary_occ_vertices and occ_vertices[-1] not in boundary_occ_vertices:
+                    transaction.coef = -0.85
+                elif occ_vertices[-1] in boundary_occ_vertices and occ_vertices[0] not in boundary_occ_vertices:
+                    transaction.coef = 0.85
         else:
             boundary_layer = BoundaryLayer(self.vals(), num_layers, wall_height, ratio)
             self._ctx.add_transaction(boundary_layer)
@@ -225,7 +222,7 @@ class GeometryQL:
             gmsh.write(filename)
         return self
 
-    def show(self, type: Literal["fltk", "mesh", "cadquery", "plot"] = "cadquery"):
+    def show(self, type: Literal["fltk", "mesh", "cq", "plot"] = "cq"):
         if type == "fltk":
             gmsh.fltk.run()
         elif type == "mesh":
