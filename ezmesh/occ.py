@@ -31,7 +31,6 @@ def get_entity_type(shape: CQObject):
     else:
         raise NotImplementedError(f"shape {shape} not supported")
 
-
 def select_occ_objs(target: Union[cq.Workplane, Iterable[CQObject]], type: EntityType):
     occ_objs = target.vals() if isinstance(target, cq.Workplane) else target
     for occ_obj in occ_objs:

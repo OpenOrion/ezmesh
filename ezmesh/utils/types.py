@@ -24,6 +24,11 @@ class OrderedSet(MutableSet[T]):
     def first(self) -> T:
         return next(iter(self))
 
+    @property
+    def last(self) -> T:
+        *_, last = iter(self)
+        return last
+
     def __contains__(self, x: object) -> bool:
         return self._d.__contains__(x)
 

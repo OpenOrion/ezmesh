@@ -1,29 +1,32 @@
 import gmsh
 from dataclasses import dataclass
 from typing import Optional
+import numpy as np
 from ezmesh.entity import Entity, MultiEntityTransaction
 from ezmesh.utils.types import OrderedSet
 
+
+
 @dataclass(eq=False)
-class BoundaryLayer(MultiEntityTransaction):
+class UnstructuredBoundaryLayer(MultiEntityTransaction):
+    "geometric series boundary layer for unstructured meshes"
+
     entities: OrderedSet[Entity]
     "faces to be added to the boundary layer"
-
-    num_layers: int
-    "number of layers"
-
-    wall_height: float
-    "mesh size normal to the the wall"
 
     ratio: float
     "size Ratio Between Two Successive Layers"
 
-    is_quad_mesh: bool = True
-    "generate recombined elements in the boundary layer"
+    hwall_n: float
+    "mesh size normal to the the wall"
+
+    num_layers: int
+    "number of layers"
 
     def before_gen(self):
-        heights = [self.wall_height]
+        heights = [self.hwall_n]
         for i in range(1, self.num_layers): 
+            # geometric series for boundary layer heights
             heights.append(heights[-1] + heights[0] * self.ratio**i)
         
         dimTags = [(entity.type.value, entity.tag) for entity in self.entities]
@@ -40,21 +43,23 @@ class BoundaryLayer(MultiEntityTransaction):
 
 
 @dataclass(eq=False)
-class BoundaryLayer2D(MultiEntityTransaction):
+class UnstructuredBoundaryLayer2D(MultiEntityTransaction):
+    "boundary layer for unstructured 2D meshes"
+
     entities: OrderedSet[Entity]
     "edges to be added to the boundary layer"
 
-    aniso_max: Optional[float] = None
-    "threshold angle for creating a mesh fan in the boundary layer"
+    ratio: Optional[float] = None
+    "size Ratio Between Two Successive Layers"
+
+    hwall_n: Optional[float] = None
+    "mesh size Normal to the The Wal"
 
     hfar: Optional[float] = None
     "element size far from the wall"
 
-    hwall_n: Optional[float] = None
-    "mesh Size Normal to the The Wal"
-
-    ratio: Optional[float] = None
-    "size Ratio Between Two Successive Layers"
+    aniso_max: Optional[float] = None
+    "threshold angle for creating a mesh fan in the boundary layer"
 
     thickness: Optional[float] = None
     "maximal thickness of the boundary layer"

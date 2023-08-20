@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal, Optional, Union
 
+import numpy as np
+
 from ezmesh.transaction import Transaction
 from ezmesh.utils.types import OrderedSet
 

@@ -3,10 +3,11 @@ import cadquery as cq
 from cadquery.cq import CQObject
 from typing import Callable, Iterable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
+import numpy as np
 from ezmesh.context import Context
 from ezmesh.entity import EntityTypeString
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm
-from ezmesh.transactions.boundary_layer import BoundaryLayer
+from ezmesh.transactions.boundary_layer import UnstructuredBoundaryLayer
 from ezmesh.transactions.physical_group import SetPhysicalGroup
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType
@@ -181,7 +182,7 @@ class GeometryQL:
             for occ_face in occ_faces:
                 vertices = self._occ_map.select_entities([occ_face], EntityType.vertex)
                 face = self._occ_map.select_entity(occ_face)
-                set_transfinite_face = SetTransfiniteFace(face, corners=vertices)
+                set_transfinite_face = SetTransfiniteFace(face)
                 self._ctx.add_transaction(set_transfinite_face)
                 edges = self._occ_map.select_entities([occ_face], EntityType.edge)
                 for edge in edges:
@@ -190,21 +191,19 @@ class GeometryQL:
                     
         return self
 
-    def addBoundaryLayer(self, num_layers: int, wall_height: float, ratio: float):
+    def addBoundaryLayer(self, ratio: float = 1, hwall_n: Optional[float] = None, num_layers: Optional[int] = None):
         if self.is_structured:
-            all_occ_edges = select_occ_objs(self._initial_workplane, EntityType.edge)
-            boundary_occ_vertices = OrderedSet(select_occ_objs(self._workplane, EntityType.vertex))
-            for occ_edge in all_occ_edges:
-                edge = self._occ_map.select_entity(occ_edge)
-                transaction = self._ctx.get_transaction(SetTransfiniteEdge, edge)
-                assert isinstance(transaction, SetTransfiniteEdge), "setTransfiniteAuto must be invoked before addBoundaryLayer."
-                occ_vertices = occ_edge.Vertices()
-                if occ_vertices[0] in boundary_occ_vertices and occ_vertices[-1] not in boundary_occ_vertices:
-                    transaction.coef = -0.85
-                elif occ_vertices[-1] in boundary_occ_vertices and occ_vertices[0] not in boundary_occ_vertices:
-                    transaction.coef = 0.85
+            boundary_vertices = self._occ_map.select_entities(self._workplane, EntityType.vertex)
+            try:
+                for (occ_edge, edge) in self._occ_map.registries[EntityType.edge].entities.items():
+                    transaction = cast(SetTransfiniteEdge, self._ctx.get_transaction(SetTransfiniteEdge, edge))
+                    curr_vertices =  self._occ_map.select_entities(occ_edge.Vertices()) # type: ignore
+                    transaction.update_from_boundary_layer(boundary_vertices, curr_vertices, occ_edge.Length(), ratio, hwall_n, num_layers) # type: ignore
+            except KeyError:
+                raise Exception("Structured boundary layer can only be applied after setTransfiniteEdge")
         else:
-            boundary_layer = BoundaryLayer(self.vals(), num_layers, wall_height, ratio)
+            assert num_layers is not None and hwall_n is not None and ratio is not None, "num_layers, hwall_n and ratio must be specified for unstructured boundary layer"
+            boundary_layer = UnstructuredBoundaryLayer(self.vals(), ratio, hwall_n, num_layers)
             self._ctx.add_transaction(boundary_layer)
         return self
 
