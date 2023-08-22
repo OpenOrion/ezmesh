@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import cadquery as cq
 from cadquery.cq import CQObject
 from cadquery.occ_impl.shapes import TopAbs_Orientation
@@ -31,8 +32,8 @@ def get_entity_type(shape: CQObject):
     else:
         raise NotImplementedError(f"shape {shape} not supported")
 
-def select_occ_objs(target: Union[cq.Workplane, Iterable[CQObject]], type: EntityType):
-    occ_objs = target.vals() if isinstance(target, cq.Workplane) else target
+def select_occ_objs(target: Union[cq.Workplane, Iterable[CQObject], CQObject], type: EntityType):
+    occ_objs = target.vals() if isinstance(target, cq.Workplane) else (target if isinstance(target, Iterable) else [target])
     for occ_obj in occ_objs:
         assert isinstance(occ_obj, cq.Shape), "target must be a shape"
         if type == EntityType.compound:
@@ -67,6 +68,47 @@ def filter_occ_objs(occ_objs: Iterable[CQObject], filter_objs: Iterable[CQObject
         if (invert and occ_obj in filter_objs) or (not invert and occ_obj not in filter_objs):
             yield occ_obj
 
+
+@dataclass
+class DirectedPath:
+    edge: cq.Edge
+    "edge of path"
+
+    direction: int = 1
+    "direction of path"
+
+    def __post_init__(self):
+        assert isinstance(self.edge, cq.Edge), "edge must be an edge"
+        assert self.direction in [-1, 1], "direction must be -1 or 1"
+        self.vertices = self.edge.Vertices()[::self.direction]
+        self.start = self.vertices[0]
+        self.end = self.vertices[-1]
+
+def get_sorted_paths(target: Union[CQObject, Sequence[CQObject]]):
+    unsorted_edges = cast(Sequence[cq.Edge], list(select_occ_objs(target, EntityType.edge)))
+    edges = list(unsorted_edges[1:])
+    sorted_paths = [DirectedPath(unsorted_edges[0])]
+    while edges:
+        for i, edge in enumerate(edges):
+            vertices = edge.Vertices()
+            if vertices[0].toTuple() == sorted_paths[-1].end.toTuple():
+                sorted_paths.append(DirectedPath(edge))
+                edges.pop(i)
+                break
+            elif vertices[-1].toTuple() == sorted_paths[-1].end.toTuple():
+                sorted_paths.append(DirectedPath(edge, direction=-1))
+                edges.pop(i)
+                break
+            elif vertices[0].toTuple() == sorted_paths[0].start.toTuple():
+                sorted_paths.insert(0, DirectedPath(edge, direction=-1))
+                edges.pop(i)
+                break
+        else:
+            raise ValueError("Edges do not form a closed loop")
+    
+    return sorted_paths
+ 
+
 def is_interior_face(face: CQObject, invert: bool = False):
     assert isinstance(face, cq.Face), "object must be a face"
     face_normal = face.normalAt()
@@ -79,7 +121,7 @@ class OCCRegistry:
         self.entities = OrderedDict[CQObject, Entity]()
 class OCCMap:
     "Maps OCC objects to gmsh tags"
-    def __init__(self, workplane: cq.Workplane) -> None:
+    def __init__(self, workplane: cq.Workplane, partition_faces: Optional[OrderedSet[CQObject]] = None) -> None:
         self.dimension = 2 if isinstance(workplane.val(), cq.Face) else 3
         self.interior = OrderedSet[CQObject]()
         self.exterior = OrderedSet[CQObject]()
@@ -98,11 +140,11 @@ class OCCMap:
         else:
             self.init_2d_objs(workplane)
 
-    def init_interior(self, target: Union[cq.Workplane, Sequence[CQObject]]):
-        objs = target.vals() if isinstance(target, cq.Workplane) else target
-        faces = list(select_occ_objs(objs, EntityType.face))
+        faces = list(select_occ_objs(workplane, EntityType.face))
         if len(faces) > 0:
             for face in faces:
+                if partition_faces and face in partition_faces:
+                    continue
                 assert isinstance(face, cq.Face), "object must be a face"
                 interior_face = is_interior_face(face) 
                 if interior_face:
@@ -118,9 +160,6 @@ class OCCMap:
     def add_interior_face(self, face: cq.Face, invert: bool = False):
         interior_idx = self.interior if not invert else self.exterior
         interior_idx.add(face)
-
-        # for occ_wire in face.Wires():
-        #     self.add_interior_wire(occ_wire, invert=invert)
 
     def add_interior_wire(self, occ_wire: cq.Wire, invert: bool = False):
         index_set = self.interior if not invert else self.exterior

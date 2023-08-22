@@ -12,8 +12,8 @@ from ezmesh.transactions.physical_group import SetPhysicalGroup
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType
 from ezmesh.mesh.exporters import export_to_su2
-from ezmesh.occ import EntityType, OCCMap, filter_occ_objs, select_batch_occ_objs, select_occ_objs, select_tagged_occ_objs
-from ezmesh.cq import Parition, get_partitioned_workplane, get_selector, import_workplane, plot_workplane, tag_workplane_entities
+from ezmesh.occ import EntityType, OCCMap, filter_occ_objs, select_batch_occ_objs, select_occ_objs, select_tagged_occ_objs, get_sorted_paths
+from ezmesh.cq import Partition, partition_workplane, get_selector, import_workplane, plot_cq, tag_workplane_entities
 from ezmesh.utils.types import OrderedSet
 from ezmesh.visualizer import visualize_mesh
 from jupyter_cadquery import show
@@ -25,6 +25,7 @@ class GeometryQL:
         self._initial_workplane = self._workplane = None # type: ignore
         self._ctx = Context()
         self.is_structured = False
+        self.partition_groups: dict[CQObject, list[list[CQObject]]] = {}
     def __enter__(self):
         gmsh.initialize()
         return self
@@ -39,17 +40,21 @@ class GeometryQL:
             self._workplane = self._workplane.end(num)
         return self
 
-    def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], partitions: Optional[Sequence[Parition]] = None):
+    def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], partitions: Optional[Sequence[Partition]] = None):
         assert self._workplane is None, "Workplane is already loaded."
 
         self._pre_partition_workplane = workplane = import_workplane(target)
+        partition_faces = None
 
         if partitions:
-            workplane = get_partitioned_workplane(self._pre_partition_workplane, partitions)
+            result = partition_workplane(self._pre_partition_workplane, partitions)
+            workplane = result.workplane
+            partition_faces = result.faces
+            self.partition_groups = result.groups
+            
 
         self._workplane = self._initial_workplane = workplane
-        self._occ_map = OCCMap(self._workplane)
-        self._occ_map.init_interior(self._pre_partition_workplane)
+        self._occ_map = OCCMap(self._workplane, partition_faces)
         
         topods = self._workplane.toOCC()
         gmsh.model.occ.importShapesNativePointer(topods._address())
@@ -112,10 +117,6 @@ class GeometryQL:
         if tagWorkspace:
             self.tag(names)
         return self
-
-    # def ignore(self):
-    #     self._ctx.ignore(self.vals())
-    #     return self
 
     def recombine(self, angle: float = 45):
         faces = self._occ_map.select_entities(self._workplane, EntityType.face)
@@ -180,14 +181,18 @@ class GeometryQL:
         occ_face_batch =  select_batch_occ_objs(self._workplane, EntityType.solid, EntityType.face)
         for occ_faces in occ_face_batch:
             for occ_face in occ_faces:
-                vertices = self._occ_map.select_entities([occ_face], EntityType.vertex)
+                # sort vertices
                 face = self._occ_map.select_entity(occ_face)
+
+
                 set_transfinite_face = SetTransfiniteFace(face)
                 self._ctx.add_transaction(set_transfinite_face)
-                edges = self._occ_map.select_entities([occ_face], EntityType.edge)
-                for edge in edges:
-                    set_transfinite_edge = SetTransfiniteEdge(edge, 50, "Progression", 1.0)
-                    self._ctx.add_transaction(set_transfinite_edge)
+                # for edge_group in self.partition_groups[occ_face]:
+
+                # for sorted_path in sorted_paths:
+                #     edge = self._occ_map.select_entity(sorted_path.edge)
+                #     set_transfinite_edge = SetTransfiniteEdge(edge, 50, "Progression", 1.0)
+                #     self._ctx.add_transaction(set_transfinite_edge)
                     
         return self
 
@@ -228,7 +233,7 @@ class GeometryQL:
             assert self._ctx.mesh is not None, "Mesh is not generated yet."
             visualize_mesh(self._ctx.mesh)
         elif type == "plot":
-            plot_workplane(self._workplane, self._occ_map)
+            plot_cq(self._workplane, self._occ_map)
         else:
             show(self._workplane, theme="dark")
         return self

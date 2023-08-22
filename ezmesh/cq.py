@@ -4,25 +4,38 @@ import numpy as np
 from cadquery.cq import CQObject, VectorLike
 from typing import Iterable, Optional, Sequence, Union
 from plotly import graph_objects as go
-from ezmesh.occ import EntityType, OCCMap, select_occ_objs, select_batch_occ_objs
+from ezmesh.occ import EntityType, OCCMap, get_sorted_paths, select_occ_objs
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
-from ezmesh.utils.types import NumpyFloat
+from ezmesh.utils.types import NumpyFloat, OrderedSet
+from OCP.BRep import BRep_Tool
+from jupyter_cadquery import show_object 
 
 @dataclass
-class Parition:
+class Partition:
     base_point: VectorLike = (0,0,0)
     "base point of the plane"
 
     angles: VectorLike = (0,0,0)
     "angle of plane"
 
-    @staticmethod
-    def from_segment(start_point: VectorLike, end_point: VectorLike):
-        return Parition(
-            base_point=start_point,
-            angles=cq.Vector(end_point) - cq.Vector(start_point)
-        )
+@dataclass
+class PartitionResult:
+    workplane: cq.Workplane
+    "partitioned workplane"
+
+    faces: OrderedSet[CQObject]
+    "partition intersected faces"
+
+    groups: dict[CQObject, list[list[CQObject]]]
+    "groups of face edge groups"
+
+@dataclass
+class EdgeGroup:
+    edge: CQObject
+    "edge"
+
+
 
 class IndexSelector(cq.Selector):
     def __init__(self, indices: Sequence[int]):
@@ -59,18 +72,44 @@ def get_selector(occ_map: OCCMap, selector: Union[cq.Selector, str, None], indic
             prev_selector = cq.selectors.AndSelector(prev_selector, selector)
         return prev_selector
 
-def get_partitioned_workplane(workplane: cq.Workplane, regions: Sequence[Parition]):
-    for region in regions:
-        angles_deg = (region.angles.toTuple() if isinstance(region.angles, cq.Vector) else region.angles)
-        workplane = workplane.split(cq.Face.makePlane(
-            None,
-            None,
-            cq.Vector(region.base_point), 
-            cq.Vector(tuple(np.radians(angles_deg)))
-        ))
-            
-    return workplane
 
+def partition_workplane(workplane: cq.Workplane, partitions: Sequence[Partition]):
+    partition_faces = OrderedSet[CQObject]()
+    partition_vertices = OrderedSet[CQObject]()
+
+    for partition in partitions:
+        angles_deg = (partition.angles.toTuple() if isinstance(partition.angles, cq.Vector) else partition.angles)
+        plane = cq.Face.makePlane(
+            None,
+            None,
+            cq.Vector(partition.base_point), 
+            cq.Vector(tuple(np.radians(angles_deg)))
+        )
+        workplane = workplane.split(plane)
+        intersected_worplane = workplane.intersect(cq.Workplane(plane))
+        partition_faces.update(intersected_worplane.faces().vals())
+        partition_vertices.update(intersected_worplane.vertices().vals())
+    
+    face_groups = dict[CQObject, list[list[CQObject]]]()
+    for face in workplane.faces().vals():
+        edge_groups: list[list[CQObject]] = []
+        for path in get_sorted_paths(face):
+            if path.start in partition_vertices:
+                edge_groups.append([])
+            edge_groups[-1].append(path.edge)
+        face_groups[face] = edge_groups
+    return PartitionResult(workplane, partition_faces, face_groups)
+
+
+def get_plane(face: cq.Face):
+    origin = face.Center()
+    normal = face.normalAt()
+    x_dir = cq.Vector(0, 0, 1).cross(normal)
+    if x_dir.Length == 0:
+        x_dir = cq.Vector(
+            BRep_Tool.Surface_s(face.wrapped).Position().XDirection()
+        )
+    return cq.Plane(origin, x_dir, normal)
 
 def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
     if isinstance(target, str):
@@ -99,8 +138,8 @@ def tag_workplane_entities(workplane: cq.Workplane, occ_map: OCCMap):
             workplane.newObject([occ_obj]).tag(tag)
 
 
-def plot_workplane(
-    workplane: cq.Workplane, 
+def plot_cq(
+    target: Union[cq.Workplane, Iterable[CQObject]], 
     occ_map: OCCMap,
     title: str = "Plot", 
     samples_per_spline: int = 50,
@@ -108,7 +147,7 @@ def plot_workplane(
     fig = go.Figure(
         layout=go.Layout(title=go.layout.Title(text=title))
     )
-    edges = select_occ_objs(workplane, EntityType.edge)
+    edges = select_occ_objs(target, EntityType.edge)
     registry = occ_map.registries[EntityType.edge]
     for edge in edges:
         edge_entity = registry.entities[edge]
