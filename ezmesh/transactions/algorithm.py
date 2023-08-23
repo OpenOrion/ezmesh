@@ -2,8 +2,8 @@ import gmsh
 from enum import Enum
 from dataclasses import dataclass
 from typing import Literal
-from ezmesh.entity import Entity, SingleEntityTransaction, EntityType
-from ezmesh.transaction import Transaction
+from ezmesh.entity import Entity, EntityType
+from ezmesh.transaction import SingleEntityTransaction, Transaction
 from ezmesh.utils.types import OrderedSet
 
 class MeshAlgorithm2D(Enum):

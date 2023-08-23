@@ -1,8 +1,8 @@
 import gmsh
 from typing import Callable, Union
 from dataclasses import dataclass
-from ezmesh.entity import Entity, SingleEntityTransaction, MultiEntityTransaction
-from ezmesh.transaction import Transaction
+from ezmesh.entity import Entity
+from ezmesh.transaction import Transaction, SingleEntityTransaction, MultiEntityTransaction
 from ezmesh.utils.types import OrderedSet
 
 @dataclass(eq=False)

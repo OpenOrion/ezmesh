@@ -2,7 +2,8 @@ import gmsh
 from dataclasses import dataclass
 from typing import Optional
 import numpy as np
-from ezmesh.entity import Entity, MultiEntityTransaction
+from ezmesh.entity import Entity
+from ezmesh.transaction import MultiEntityTransaction
 from ezmesh.utils.types import OrderedSet
 
 

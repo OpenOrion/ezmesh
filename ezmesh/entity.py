@@ -3,12 +3,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal, Optional, Union
 
-import numpy as np
-
-from ezmesh.transaction import Transaction
-from ezmesh.utils.types import OrderedSet
-
-
 EntityTypeString = Literal["compound", "solid", "shell", "face", "wire", "edge", "vertex"]
 
 class EntityType(Enum):
@@ -44,13 +38,3 @@ class Entity:
 
     def __hash__(self) -> int:
         return hash((self.type, self.tag))
-
-@dataclass(eq=False)
-class SingleEntityTransaction(Transaction):
-    entity: Entity
-    "The entity that transaction will be applied towards"
-
-@dataclass(eq=False)
-class MultiEntityTransaction(Transaction):
-    entities: OrderedSet[Entity]
-    "The entities that transaction will be applied towards"

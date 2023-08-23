@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 from typing import Literal, Optional, Sequence
 
 import numpy as np
-from ezmesh.entity import Entity, SingleEntityTransaction, EntityType
+from ezmesh.entity import Entity, EntityType
+from ezmesh.transaction import SingleEntityTransaction
 from ezmesh.utils.types import OrderedSet
 
 TransfiniteArrangementType = Literal["Left", "Right", "AlternateLeft", "AlternateRight"]
