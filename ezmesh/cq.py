@@ -11,6 +11,7 @@ from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import OrderedSet
 from jupyter_cadquery import show_object
 from ezmesh.utils.types import NumpyFloat
+from OCP.BRep import BRep_Tool
 
 class CQEntityContext:
     "Maps OCC objects to gmsh entity tags"
@@ -98,7 +99,8 @@ class Split:
     def from_anchor(
         workplane: cq.Workplane, 
         anchor: Union[list[VectorTuple], VectorTuple] = (0,0,0), 
-        angle: Union[list[VectorTuple], VectorTuple] = (0,0,0), 
+        angle: Union[list[VectorTuple], VectorTuple] = (0,0,0),
+        snap_tolerance: Optional[float] = None
     ):
         anchors = [anchor] if isinstance(anchor, tuple) else anchor
         angles = [angle] if isinstance(angle, tuple) else angle
@@ -107,7 +109,8 @@ class Split:
         edges = []
         for anchor, angle in zip(anchors, angles):
             split_face = Split.from_plane(workplane, anchor, angle)
-            intersect_vertex = CQExtensions.splitIntersect(workplane, anchor, split_face)
+            intersect_vertex = CQExtensions.split_intersect(workplane, anchor, split_face, snap_tolerance)
+            workplane.newObject
             edges.append((anchor, intersect_vertex.toTuple()))
         return Split.from_edges(workplane, edges)
     
@@ -131,7 +134,17 @@ class Split:
             return Split.from_pnts(workplane, [*top_pnts.tolist(), *bottom_pnts[::-1].tolist()])
 
         return Split.from_pnts(workplane, [*edges_pnts[:,0].tolist(),*edges_pnts[:,1][::-1].tolist()])
-        
+
+
+def get_plane(face: cq.Face):
+    origin = face.Center()
+    normal = face.normalAt()
+    x_dir = cq.Vector(0, 0, 1).cross(normal)
+    if x_dir.Length == 0:
+        x_dir = cq.Vector(
+            BRep_Tool.Surface_s(face.wrapped).Position().XDirection()
+        )
+    return cq.Plane(origin, x_dir, normal)
 
 @dataclass
 class SplitResult:
@@ -233,6 +246,9 @@ def get_selector(selector: Union[cq.Selector, str, None], group: Optional[Ordere
         return prev_selector
 
 
-
-
-
+def get_edge_angle(prev_edge: cq.Edge, edge: cq.Edge):
+    prev_tangent_vec = prev_edge.tangentAt(0.5)
+    tangent_vec = edge.tangentAt(0.5)                    
+    angle = np.arccos(prev_tangent_vec.dot(tangent_vec)/(prev_tangent_vec.Length * tangent_vec.Length))
+    assert not np.isnan(angle), "angle should not be NaN"
+    return angle

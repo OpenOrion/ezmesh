@@ -1,10 +1,12 @@
 from dataclasses import dataclass
-from enum import Enum
+from plotly import graph_objects as go
 import cadquery as cq
 from cadquery.cq import CQObject, VectorLike
 from typing import Iterable, Literal, Optional, Sequence, Union, cast
 import numpy as np
 from ezmesh.entity import EntityType
+from ezmesh.utils.plot import add_plot
+from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import OrderedSet
 
 
@@ -163,7 +165,16 @@ class CQLinq:
 
 class CQExtensions:
     @staticmethod
-    def splitIntersect(workplane: cq.Workplane, anchor: VectorLike, splitter: cq.Face):
+    def find_nearest_point(workplane: cq.Workplane, near_point: cq.Vertex, tolerance: float = 1e-2):
+        min_dist_vertex, min_dist = None, float("inf")
+        for vertex in workplane.vertices().vals():
+            dist = vertex.distance(near_point)
+            if dist < min_dist and dist <= tolerance:
+                min_dist_vertex, min_dist = vertex, dist
+        return min_dist_vertex
+
+    @staticmethod
+    def split_intersect(workplane: cq.Workplane, anchor: VectorLike, splitter: cq.Face, snap_tolerance: Optional[float] = None):
         intersected_vertices = workplane.intersect(cq.Workplane(splitter)).vertices().vals()
         min_dist_vertex, min_dist = None, float("inf") 
         for vertex in intersected_vertices:
@@ -174,4 +185,27 @@ class CQExtensions:
                     min_dist_vertex, min_dist = vertex, intersect_dist
             except: ...
         assert isinstance(min_dist_vertex, cq.Vertex), "No intersected vertex found"
+        if snap_tolerance:
+            nearest_point = CQExtensions.find_nearest_point(workplane, min_dist_vertex, snap_tolerance)
+            if nearest_point:
+                return nearest_point
         return min_dist_vertex
+
+    @staticmethod
+    def plot_groups(
+        groups: Sequence[Sequence[CQObject]], 
+        title: str = "Group Plot", 
+        samples_per_spline: int = 50,
+    ):
+        fig = go.Figure(
+            layout=go.Layout(title=go.layout.Title(text=title))
+        )
+        for i, group in enumerate(groups):
+            group_coords = []
+            sampling = get_sampling(0, 1, samples_per_spline, False)
+            for edge in group:
+                group_coords += [vec.toTuple() for vec in edge.positions(sampling)]
+            add_plot(np.array(group_coords), fig, f"Group {i}")
+
+        fig.layout.yaxis.scaleanchor = "x"  # type: ignore
+        fig.show()

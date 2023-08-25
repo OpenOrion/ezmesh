@@ -54,7 +54,7 @@ class TransactionContext:
         else:
             return self.entity_transactions.get((transaction_type, entity))
 
-    def add_transaction(self, transaction: Transaction):
+    def add_transaction(self, transaction: Transaction, ignore_duplicates: bool = False):
         if isinstance(transaction, (SingleEntityTransaction, MultiEntityTransaction) ):
             entities = transaction.entities if isinstance(transaction, MultiEntityTransaction) else OrderedSet([transaction.entity])
             for entity in entities:
@@ -62,16 +62,20 @@ class TransactionContext:
                 if transaction_id not in self.entity_transactions:
                     self.entity_transactions[transaction_id] = transaction
                 else:
-                    old_transaction = self.entity_transactions[transaction_id]
-                    if isinstance(old_transaction, MultiEntityTransaction):
-                        old_transaction.entities.remove(entity)
-                    self.entity_transactions[transaction_id] = transaction
+                    if not ignore_duplicates:
+                        old_transaction = self.entity_transactions[transaction_id]
+                        if isinstance(old_transaction, MultiEntityTransaction):
+                            old_transaction.entities.remove(entity)
+                        else:
+                            if str(type(transaction).__name__) == "SetTransfiniteEdge":
+                                print("SetTransfiniteEdge", transaction.entity.tag, old_transaction.num_elems, transaction.num_elems)
+                        self.entity_transactions[transaction_id] = transaction
         else:
             self.system_transactions[type(transaction)] = transaction
 
-    def add_transactions(self, transactions: Sequence[Transaction]):
+    def add_transactions(self, transactions: Sequence[Transaction], ignore_duplicates: bool = False):
         for transaction in transactions:
-            self.add_transaction(transaction)
+            self.add_transaction(transaction, ignore_duplicates)
 
     def commit(self, dim: int = 3):
         gmsh.model.occ.synchronize()
@@ -82,7 +86,8 @@ class TransactionContext:
         for transaction in transactions:
             transaction.before_gen()
 
-        # gmsh.fltk.run()
+        gmsh.write("test.geo_unrolled")
+        gmsh.fltk.run()
 
         gmsh.model.mesh.generate(dim)
 

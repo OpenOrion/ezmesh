@@ -1,8 +1,7 @@
 from typing import Sequence
 from ezmesh.utils.types import Number
-from cadquery.cq import VectorLike
 import numpy as np
-
+import numpy.typing as npt
 
 def get_sampling(start: Number, end: Number, num_samples: int, is_cosine_sampling: bool):
     if is_cosine_sampling:
@@ -18,7 +17,7 @@ def generate_circle(r, num_points=100):
     y = r * np.sin(theta)
     return np.column_stack((x, y))
 
-def generate_naca4_airfoil(naca_string: str, num_points: int = 100) -> Sequence[VectorLike]:
+def generate_naca4_airfoil(naca_string: str, num_points: int = 100) -> npt.NDArray[np.float64]:
 
     """generates NACA4 coordinates
 

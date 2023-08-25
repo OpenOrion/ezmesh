@@ -12,7 +12,7 @@ TransfiniteMeshType = Literal["Progression", "Bump", "Beta"]
 
 
 def get_num_nodes_for_ratios(num_nodes: int, ratios: Sequence[float]):
-    assert np.round(sum(ratios), 5) == 1, "Ratios must sum to 1"
+    assert np.round(np.sum(ratios), 5) == 1, "Ratios must sum to 1"
     assert num_nodes > len(ratios), f"Number of nodes must be greater than number of ratios {len(ratios)}"
     allocated_nodes = [int(ratio * num_nodes) for ratio in ratios]
     remaining_nodes = num_nodes - sum(allocated_nodes)
@@ -93,9 +93,13 @@ class SetTransfiniteSolid(SingleEntityTransaction):
     entity: Entity
     "face to apply field"
 
+    corners: Optional[OrderedSet[Entity]] = None
+    "corner point tags for transfinite face"
+
     def before_gen(self):
         assert self.entity.type == EntityType.solid, "SetTransfiniteSolid only accepts solids"
-        gmsh.model.mesh.setTransfiniteVolume(self.entity.tag)
+        corner_tags = [corner.tag for corner in self.corners] if self.corners else []
+        gmsh.model.mesh.setTransfiniteVolume(self.entity.tag, corner_tags)
 
 
 
