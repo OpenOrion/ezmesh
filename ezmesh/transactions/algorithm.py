@@ -66,8 +66,6 @@ class SetMeshAlgorithm(SingleEntityTransaction):
             algo_val = MeshAlgorithm2D[self.type].value
             gmsh.option.setNumber("Mesh.Algorithm", algo_val)
 
-
-
 # @dataclass(eq=False)
 # class SetMeshAlgorithm3D(EntityTransaction):
 #     entities: OrderedSet[Entity]

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from enum import Enum
 import cadquery as cq
-from cadquery.cq import CQObject
-from typing import Iterable, Optional, Sequence, Union, cast
+from cadquery.cq import CQObject, VectorLike
+from typing import Iterable, Literal, Optional, Sequence, Union, cast
+import numpy as np
 from ezmesh.entity import EntityType
 from ezmesh.utils.types import OrderedSet
 
@@ -21,12 +23,10 @@ class DirectedPath:
         self.start = self.vertices[0]
         self.end = self.vertices[-1]
 
-@dataclass
-class CQRegistry:
-    interior = OrderedSet[CQObject]()
-    exterior = OrderedSet[CQObject]()
+CQGroupTypeString = Literal["split", "interior", "exterior"]
 
-class CQUtils:
+
+class CQLinq:
     @staticmethod
     def is_interior_face(face: CQObject, invert: bool = False):
         assert isinstance(face, cq.Face), "object must be a face"
@@ -38,7 +38,7 @@ class CQUtils:
     @staticmethod
     def select_tagged(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: EntityType):
         for tag in ([tags] if isinstance(tags, str) else tags):
-            yield from CQUtils.select(workplane._getTagged(tag).vals(), type)
+            yield from CQLinq.select(workplane._getTagged(tag).vals(), type)
 
     @staticmethod
     def get_entity_type(shape: CQObject):
@@ -82,13 +82,13 @@ class CQUtils:
     @staticmethod
     def select_batch(target: Union[cq.Workplane, Iterable[CQObject]], parent_type: EntityType, child_type: EntityType):
         cq_objs = list(target.vals() if isinstance(target, cq.Workplane) else target)
-        entity_type = CQUtils.get_entity_type(cq_objs[0])
+        entity_type = CQLinq.get_entity_type(cq_objs[0])
         if entity_type.value == child_type.value:
             yield cq_objs
         else:
-            parent_cq_objs = CQUtils.select(cq_objs, parent_type)
+            parent_cq_objs = CQLinq.select(cq_objs, parent_type)
             for parent_occ_obj in parent_cq_objs:
-                yield CQUtils.select([parent_occ_obj], child_type)
+                yield CQLinq.select([parent_occ_obj], child_type)
 
     @staticmethod
     def filter(objs: Iterable[CQObject], filter_objs: Iterable[CQObject], invert: bool):
@@ -99,7 +99,7 @@ class CQUtils:
 
     @staticmethod
     def sort(target: Union[CQObject, Sequence[CQObject]]):
-        unsorted_edges = cast(Sequence[cq.Edge], list(CQUtils.select(target, EntityType.edge)))
+        unsorted_edges = cast(list[cq.Edge], list(CQLinq.select(target, EntityType.edge)))
         edges = list(unsorted_edges[1:])
         sorted_paths = [DirectedPath(unsorted_edges[0])]
         while edges:
@@ -122,44 +122,56 @@ class CQUtils:
         
         return sorted_paths
     
+    @staticmethod
+    def _add_to_group(
+        wires: Iterable[cq.Wire],
+        registry: OrderedSet[CQObject],
+    ):
+        for wire in wires:
+            registry.add(wire)
+            for edge in wire.Edges():
+                registry.add(edge)
+            for vertex in wire.Vertices():
+                registry.add(vertex)
 
+    @staticmethod
+    def group(
+        target: Union[cq.Workplane, Sequence[CQObject]], 
+        split_faces: Optional[OrderedSet[CQObject]] = None
+    ):
+        groups: dict[CQGroupTypeString, OrderedSet[CQObject]] = {
+            "split": OrderedSet[CQObject](),
+            "interior": OrderedSet[CQObject](),
+            "exterior": OrderedSet[CQObject](),
+        }
+        faces = list(CQLinq.select(target, EntityType.face))
+        if len(faces) > 0:
+            for face in faces:
+                assert isinstance(face, cq.Face), "object must be a face"
+                if split_faces and face in split_faces:
+                    face_registry = groups["split"]
+                else:
+                    interior_face = CQLinq.is_interior_face(face) 
+                    face_registry = groups["interior" if interior_face else "exterior"]
+                face_registry.add(face)
+                CQLinq._add_to_group(face.Wires(), face_registry)
+        else:
+            CQLinq._add_to_group(faces[0].innerWires(), groups["interior"])
+            CQLinq._add_to_group([faces[0].outerWire()], groups["exterior"])
 
-def get_cq_registry(
-    target: Union[cq.Workplane, Sequence[CQObject]], 
-    partition_faces: Optional[OrderedSet[CQObject]] = None
-):
-    index = CQRegistry()
+        return groups
 
-    faces = list(CQUtils.select(target, EntityType.face))
-    if len(faces) > 0:
-        for face in faces:
-            if partition_faces and face in partition_faces:
-                continue
-            assert isinstance(face, cq.Face), "object must be a face"
-            interior_face = CQUtils.is_interior_face(face) 
-            if interior_face:
-                index.interior.add(face)
-            else:
-                index.exterior.add(face)
-
-            for wire in face.innerWires():
-                add_wire_to_registry(index, wire)
-
-            add_wire_to_registry(index, face.outerWire(), is_interior=False)
-    return index
-
-def add_wire_to_registry(
-    index: CQRegistry,
-    wire: cq.Wire,
-    is_interior: bool = True
-):
-    curr_index = index.interior if is_interior else index.exterior
-    opposite_index = index.exterior if is_interior else index.interior
-
-    curr_index.add(wire)
-    for edge in wire.Edges():
-        if edge not in opposite_index:
-            curr_index.add(edge)
-    for vertex in wire.Vertices():
-        if vertex not in opposite_index:
-            curr_index.add(vertex)
+class CQExtensions:
+    @staticmethod
+    def splitIntersect(workplane: cq.Workplane, anchor: VectorLike, splitter: cq.Face):
+        intersected_vertices = workplane.intersect(cq.Workplane(splitter)).vertices().vals()
+        min_dist_vertex, min_dist = None, float("inf") 
+        for vertex in intersected_vertices:
+            try:
+                to_intersect_line = cq.Edge.makeLine(anchor, vertex.toTuple()) # type: ignore
+                intersect_dist = to_intersect_line.Length() # type: ignore
+                if intersect_dist < min_dist:
+                    min_dist_vertex, min_dist = vertex, intersect_dist
+            except: ...
+        assert isinstance(min_dist_vertex, cq.Vertex), "No intersected vertex found"
+        return min_dist_vertex

@@ -82,6 +82,8 @@ class TransactionContext:
         for transaction in transactions:
             transaction.before_gen()
 
+        # gmsh.fltk.run()
+
         gmsh.model.mesh.generate(dim)
 
         for transaction in transactions:

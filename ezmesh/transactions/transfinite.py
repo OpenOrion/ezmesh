@@ -4,11 +4,26 @@ from typing import Literal, Optional, Sequence
 
 import numpy as np
 from ezmesh.entity import Entity, EntityType
-from ezmesh.transaction import SingleEntityTransaction
+from ezmesh.transaction import SingleEntityTransaction, MultiEntityTransaction, Transaction
 from ezmesh.utils.types import OrderedSet
 
 TransfiniteArrangementType = Literal["Left", "Right", "AlternateLeft", "AlternateRight"]
 TransfiniteMeshType = Literal["Progression", "Bump", "Beta"]
+
+
+def get_num_nodes_for_ratios(num_nodes: int, ratios: Sequence[float]):
+    assert np.round(sum(ratios), 5) == 1, "Ratios must sum to 1"
+    assert num_nodes > len(ratios), f"Number of nodes must be greater than number of ratios {len(ratios)}"
+    allocated_nodes = [int(ratio * num_nodes) for ratio in ratios]
+    remaining_nodes = num_nodes - sum(allocated_nodes)
+    remaining_ratio_indices = sorted(range(len(ratios)), key=lambda i: ratios[i], reverse=True)
+    for i in remaining_ratio_indices:
+        if remaining_nodes > 0:
+            allocated_nodes[i] += 1
+            remaining_nodes -= 1
+    
+    assert sum(allocated_nodes) == num_nodes, "Number of allocated nodes must equal num_nodes"
+    return allocated_nodes
 
 @dataclass(eq=False)
 class SetTransfiniteEdge(SingleEntityTransaction):
@@ -65,12 +80,12 @@ class SetTransfiniteFace(SingleEntityTransaction):
     arrangement: TransfiniteArrangementType = "Left"
     "arrangement of transfinite face"
 
-    corners: OrderedSet[Entity] = field(default_factory=OrderedSet)
+    corners: Optional[OrderedSet[Entity]] = None
     "corner point tags for transfinite face"
 
     def before_gen(self):
         assert self.entity.type == EntityType.face, "SetTransfiniteFace only accepts faces"
-        corner_tags = [corner.tag for corner in self.corners]
+        corner_tags = [corner.tag for corner in self.corners] if self.corners else []
         gmsh.model.mesh.setTransfiniteSurface(self.entity.tag, self.arrangement, corner_tags)
 
 @dataclass(eq=False)
@@ -82,3 +97,22 @@ class SetTransfiniteSolid(SingleEntityTransaction):
         assert self.entity.type == EntityType.solid, "SetTransfiniteSolid only accepts solids"
         gmsh.model.mesh.setTransfiniteVolume(self.entity.tag)
 
+
+
+@dataclass(eq=False)
+class SetCompound(MultiEntityTransaction):
+    entities: OrderedSet[Entity]
+    "face to apply field"
+
+    def before_gen(self):
+        entity_tags = [entity.tag for entity in self.entities]
+        gmsh.model.mesh.setCompound(EntityType.edge.value, entity_tags)
+
+
+@dataclass(eq=False)
+class SetTransfiniteAuto(Transaction):
+
+    def before_gen(self):
+        gmsh.option.setNumber('Mesh.MeshSizeMin', 0.5)
+        gmsh.option.setNumber('Mesh.MeshSizeMax', 0.5)
+        gmsh.model.mesh.setTransfiniteAutomatic()

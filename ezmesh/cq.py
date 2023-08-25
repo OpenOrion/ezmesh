@@ -2,18 +2,19 @@ from dataclasses import dataclass
 import cadquery as cq
 import numpy as np
 from plotly import graph_objects as go
-from cadquery.cq import CQObject, VectorLike
-from typing import Iterable, Optional, OrderedDict, Sequence, Union, cast
+from cadquery.cq import CQObject
+from typing import Iterable, Literal, Optional, OrderedDict, Sequence, Union, cast
 from ezmesh.entity import Entity, EntityType
-from ezmesh.utils.cq import CQRegistry, CQUtils, get_cq_registry
+from ezmesh.utils.cq import CQExtensions, CQLinq
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import OrderedSet
-
+from jupyter_cadquery import show_object
+from ezmesh.utils.types import NumpyFloat
 
 class CQEntityContext:
     "Maps OCC objects to gmsh entity tags"
-    def __init__(self, workplane: cq.Workplane, partition_faces: Optional[OrderedSet[CQObject]] = None) -> None:
+    def __init__(self, workplane: cq.Workplane) -> None:
         self.dimension = 2 if isinstance(workplane.val(), cq.Face) else 3
 
         self.entity_registries: dict[EntityType, OrderedDict[CQObject, Entity]] = {
@@ -30,10 +31,8 @@ class CQEntityContext:
         else:
             self._init_2d_objs(workplane)
 
-        self.cq_registry = get_cq_registry(workplane, partition_faces)
-
     def add(self, obj: CQObject):
-        entity_type = CQUtils.get_entity_type(obj)
+        entity_type = CQLinq.get_entity_type(obj)
         registry = self.entity_registries[entity_type]
         if obj not in registry:
             tag = len(registry) + 1
@@ -41,14 +40,14 @@ class CQEntityContext:
 
 
     def select(self, obj: CQObject):
-        entity_type = CQUtils.get_entity_type(obj)
+        entity_type = CQLinq.get_entity_type(obj)
         registry = self.entity_registries[entity_type]
         return registry[obj]
     
     def select_many(self, target: Union[cq.Workplane, Iterable[CQObject]], type: Optional[EntityType] = None):
         entities = OrderedSet[Entity]()
         objs = target.vals() if isinstance(target, cq.Workplane) else target
-        selected_objs = objs if type is None else CQUtils.select(objs, type)
+        selected_objs = objs if type is None else CQLinq.select(objs, type)
         for obj in selected_objs:
             try:
                 selected_entity = self.select(obj)
@@ -60,7 +59,7 @@ class CQEntityContext:
     
     def select_batch(self, target: Union[cq.Workplane, Iterable[CQObject]], parent_type: EntityType, child_type: EntityType):
         objs = target.vals() if isinstance(target, cq.Workplane) else target
-        selected_batches = CQUtils.select_batch(objs, parent_type, child_type)
+        selected_batches = CQLinq.select_batch(objs, parent_type, child_type)
         for selected_batch in selected_batches:
             yield self.select_many(selected_batch)
 
@@ -84,53 +83,68 @@ class CQEntityContext:
                 self.add(wire)
             self.add(face)
 
-@dataclass
-class Partition:
-    base_point: VectorLike = (0,0,0)
-    "base point of the plane"
+VectorTuple = tuple[float, float, float]
+EdgeTuple = tuple[VectorTuple, VectorTuple]
+class Split:
+    @staticmethod
+    def from_plane(
+        workplane: cq.Workplane,
+        base_pnt: VectorTuple = (0,0,0), 
+        angle: VectorTuple = (0,0,0), 
+    ):
+        return cq.Face.makePlane(None, None, tuple(base_pnt), tuple(np.radians(angle)))
 
-    angles: VectorLike = (0,0,0)
-    "angle of plane"
+    @staticmethod
+    def from_anchor(
+        workplane: cq.Workplane, 
+        anchor: Union[list[VectorTuple], VectorTuple] = (0,0,0), 
+        angle: Union[list[VectorTuple], VectorTuple] = (0,0,0), 
+    ):
+        anchors = [anchor] if isinstance(anchor, tuple) else anchor
+        angles = [angle] if isinstance(angle, tuple) else angle
+        assert len(anchors) == len(angles), "anchors and angles must be the same length"
 
-@dataclass
-class PartitionResult:
-    workplane: cq.Workplane
-    "partitioned workplane"
-
-    faces: OrderedSet[CQObject]
-    "partition intersected faces"
-
-    groups: dict[CQObject, list[list[CQObject]]]
-    "groups of face edge groups"
-
-def partition_workplane(workplane: cq.Workplane, partitions: Sequence[Partition]):
-    partition_faces = OrderedSet[CQObject]()
-    partition_vertices = OrderedSet[CQObject]()
-
-    for partition in partitions:
-        angles_deg = (partition.angles.toTuple() if isinstance(partition.angles, cq.Vector) else partition.angles)
-        plane = cq.Face.makePlane(
-            None,
-            None,
-            cq.Vector(partition.base_point), 
-            cq.Vector(tuple(np.radians(angles_deg)))
-        )
-        workplane = workplane.split(plane)
-        intersected_worplane = workplane.intersect(cq.Workplane(plane))
-        partition_faces.update(intersected_worplane.faces().vals())
-        partition_vertices.update(intersected_worplane.vertices().vals())
+        edges = []
+        for anchor, angle in zip(anchors, angles):
+            split_face = Split.from_plane(workplane, anchor, angle)
+            intersect_vertex = CQExtensions.splitIntersect(workplane, anchor, split_face)
+            edges.append((anchor, intersect_vertex.toTuple()))
+        return Split.from_edges(workplane, edges)
     
-    face_groups = dict[CQObject, list[list[CQObject]]]()
-    for face in workplane.faces().vals():
-        edge_groups: list[list[CQObject]] = []
-        for path in CQUtils.sort(face):
-            if path.start in partition_vertices or len(edge_groups) == 0:
-                edge_groups.append([])
-            edge_groups[-1].append(path.edge)
-        face_groups[face] = edge_groups
-    return PartitionResult(workplane, partition_faces, face_groups)
+    @staticmethod
+    def from_pnts(workplane: cq.Workplane, pnts: Sequence[tuple[float, float, float]]):
+        return cq.Face.makeFromWires(cq.Wire.makePolygon(pnts))
 
-# def reassmble_workplane(workplane: cq.Workplane, partitions: Sequence[Partition]):
+    @staticmethod
+    def from_edges(
+        workplane: cq.Workplane, 
+        edges: Union[list[EdgeTuple], EdgeTuple], 
+        dir: Literal["X", "Y", "Z"] = "Z"
+    ):
+        edges_pnts = np.array([edges] if isinstance(edges, tuple) else edges)
+        if len(edges_pnts) == 1:
+            top_pnts = edges_pnts[0]
+            maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
+            bottom_pnts = np.array(top_pnts)
+            bottom_pnts[:, {"X": 0, "Y": 1, "Z": 2}[dir]] = -maxDim
+
+            return Split.from_pnts(workplane, [*top_pnts.tolist(), *bottom_pnts[::-1].tolist()])
+
+        return Split.from_pnts(workplane, [*edges_pnts[:,0].tolist(),*edges_pnts[:,1][::-1].tolist()])
+        
+
+@dataclass
+class SplitResult:
+    workplane: cq.Workplane
+    faces: OrderedSet[CQObject]
+
+def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face]):
+    split_faces = OrderedSet[CQObject]()
+    for split in splits:      
+        workplane = workplane.split(split)
+        intersected_worplane = workplane.intersect(cq.Workplane(split))
+        split_faces.update(intersected_worplane.faces().vals())
+    return SplitResult(workplane, split_faces)
     
 
 
@@ -153,6 +167,8 @@ def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
 
     return workplane
 
+
+
 def tag_workplane(workplane: cq.Workplane, ctx: CQEntityContext):
     "Tag all gmsh entity tags to workplane"
     for registry_name, registry in ctx.entity_registries.items():
@@ -162,18 +178,17 @@ def tag_workplane(workplane: cq.Workplane, ctx: CQEntityContext):
 
 def plot_workplane(
     target: Union[cq.Workplane, Iterable[CQObject]], 
-    ctx: CQEntityContext,
+    ctx: Optional[CQEntityContext] = None,
     title: str = "Plot", 
     samples_per_spline: int = 50,
 ):
     fig = go.Figure(
         layout=go.Layout(title=go.layout.Title(text=title))
     )
-    edges = CQUtils.select(target, EntityType.edge)
-    registry = ctx.entity_registries[EntityType.edge]
+    edges = CQLinq.select(target, EntityType.edge)
+    registry = ctx.entity_registries[EntityType.edge] if ctx else None
     for edge in edges:
-        edge_entity = registry[edge]
-        edge_name = registry[edge].name or f"Edge{edge_entity.tag}"
+        edge_name = (registry[edge].name or f"Edge{registry[edge].tag}") if registry else "Edge"
         sampling = get_sampling(0, 1, samples_per_spline, False)
         coords = np.array([vec.toTuple() for vec in edge.positions(sampling)], dtype=NumpyFloat) # type: ignore
         add_plot(coords, fig, edge_name)
@@ -188,26 +203,26 @@ class IndexSelector(cq.Selector):
     def filter(self, objectList):
         return [objectList[i] for i in self.indices]
 
-class InteriorSelector(cq.Selector):
-    def __init__(self, index: CQRegistry, is_interior: bool = True):
-        self.index = index
+class GroupSelector(cq.Selector):
+    def __init__(self, allow: OrderedSet[CQObject], is_interior: bool = True):
+        self.allow = allow
         self.is_interior = is_interior
     def filter(self, objectList):
         filtered_objs = []
         for obj in objectList:
-            if (self.is_interior and obj in self.index.interior) or (not self.is_interior and obj in self.index.exterior):
+            if obj in self.allow:
                 filtered_objs.append(obj)
         return filtered_objs
 
-def get_selector(registry: CQRegistry, selector: Union[cq.Selector, str, None], indices: Optional[Sequence[int]] = None, is_interior: Optional[bool] = None):
+def get_selector(selector: Union[cq.Selector, str, None], group: Optional[OrderedSet[CQObject]], indices: Optional[Sequence[int]] = None):
     selectors = []
     if isinstance(selector, str):
         selector = selectors.append(cq.StringSyntaxSelector(selector))
     elif isinstance(selector, cq.Selector):
         selectors.append(selector)
 
-    if is_interior is not None:
-        selectors.append(InteriorSelector(registry, is_interior))
+    if group is not None:
+        selectors.append(GroupSelector(group))
     if indices is not None:
         selectors.append(IndexSelector(indices))
 
