@@ -4,7 +4,7 @@ from cadquery.cq import CQObject
 from typing import Callable, Iterable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
 import numpy as np
-from ezmesh.entity import Entity, EntityTypeString
+from ezmesh.entity import EntityTypeString
 from ezmesh.transaction import TransactionContext
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm
 from ezmesh.transactions.boundary_layer import UnstructuredBoundaryLayer
@@ -12,9 +12,8 @@ from ezmesh.transactions.physical_group import SetPhysicalGroup
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType, get_num_nodes_for_ratios
 from ezmesh.mesh.exporters import export_to_su2
-from ezmesh.cq import CQEntityContext, EntityType, get_edge_angle, get_plane, get_selector, import_workplane, split_workplane, plot_workplane, tag_workplane
+from ezmesh.cq import CQEntityContext, EntityType, get_selector, import_workplane, split_workplane, plot_workplane, tag_workplane
 from ezmesh.utils.cq import CQExtensions, CQGroupTypeString, CQLinq
-from ezmesh.utils.types import OrderedSet
 from ezmesh.visualizer import visualize_mesh
 from jupyter_cadquery import show
 
@@ -52,7 +51,7 @@ class GeometryQL:
             
         self._workplane = self._initial_workplane = workplane
         self._entity_ctx = CQEntityContext(self._workplane)
-        self._groups = CQLinq.group(self._workplane)
+        self._groups = CQLinq.groupByTypes(self._workplane)
 
         topods = self._workplane.toOCC()
         gmsh.model.occ.importShapesNativePointer(topods._address())
@@ -179,61 +178,42 @@ class GeometryQL:
         self._ctx.add_transactions(set_transfinite_solids)
         return self
 
-    def setTransfiniteAuto(self, num_nodes: int = 50, group_angle = 45):
+    def setTransfiniteAuto(self, num_nodes: int = 50, group_angle: float = 45):
         # transfinite_auto = SetTransfiniteAuto()
         # self._ctx.add_transaction(transfinite_auto)
-        self.setTransfiniteSolid()
-        cq_face_batch =  CQLinq.select_batch(self._workplane, EntityType.solid, EntityType.face)
-        
         edge_transactions = []
-        for cq_faces in [*list(cq_face_batch)]:
-            for cq_face in [*list(cq_faces)]:
-                sorted_paths = CQLinq.sort(cq_face.Edges())
-                assert sorted_paths[-1].end == sorted_paths[0].start, "Edges do not form a closed loop"
-                prev_path = sorted_paths[-1]
-                angles = []
-                for path in sorted_paths: # type: ignore
-                    angle = get_edge_angle(prev_path.edge, path.edge)
-                    angles.append(angle)
-                    prev_path = path
+        for cq_solid in CQLinq.select(self._workplane, EntityType.solid):
+            faces = cq_solid.Faces()
+            # CQExtensions.plot_groups([[faces[0], faces[1], faces[2]]])
 
-                
-                shuffle_num = 0
-                for angle in angles:
-                    if angle > np.radians(group_angle):
-                        break
-                    shuffle_num += 1
-
-                cq_corners = []
-                edges_groups: list[list[cq.Edge]] = []
-                for i, angle in enumerate(angles[shuffle_num:] + angles[:shuffle_num]):
-                    path = sorted_paths[i+shuffle_num]
-                    if angle > np.radians(group_angle):
-                        edges_groups.append([])
-                        cq_corners.append(path.start)
-                    edges_groups[-1].append(path.edge)
-
+            for cq_face in cq_solid.Faces():
+                edges_groups = CQLinq.groupByAngles(cq_face.Edges(), group_angle)
+                cq_face_corners = [paths[0].start for paths in edges_groups]
                 if len(edges_groups) != 4:
                     plot_workplane(cq_face)
                 assert len(edges_groups) == 4, "Face must have 4 corners"
-
+                
                 face = self._entity_ctx.select(cq_face)
-                corners = self._entity_ctx.select_many(cq_corners)
+                corners = self._entity_ctx.select_many(cq_face_corners)
                 set_transfinite_face = SetTransfiniteFace(face, corners=corners)
                 self._ctx.add_transaction(set_transfinite_face)
-                # CQExtensions.plot_groups(edges_groups)
-                for i, cq_edges in enumerate(edges_groups):
-                    group_length = np.sum([cq_edge.Length() for cq_edge in cq_edges])
-                    ratios = [cq_edge.Length()/group_length for cq_edge in cq_edges]
+                
+                for i, paths in enumerate(edges_groups):
+                    group_length = np.sum([path.edge.Length() for path in paths])
+                    ratios = [path.edge.Length()/group_length for path in paths]
                     edge_num_nodes = get_num_nodes_for_ratios(num_nodes, ratios)
-                    # print(edge_num_nodes)
-                    for j, cq_edge in enumerate(cq_edges):
+                    for j, path in enumerate(paths):
                         assert edge_num_nodes[j] != 0, "edge nodes of 0 detected, raise the num_nodes"
-                        edge = self._entity_ctx.select(cq_edge)
-                        # print(edge.tag, edge_num_nodes[j])
+                        edge = self._entity_ctx.select(path.edge)
                         set_transfinite_edge = SetTransfiniteEdge(edge, edge_num_nodes[j], "Progression", 1.0)
                         edge_transactions.append(set_transfinite_edge)
-                        # self._ctx.add_transaction(set_transfinite_edge)
+
+            # solid_corners = self._entity_ctx.select_many(cq_solid_corners)
+            # assert len(solid_corners) <= 8, "Solid must have <=8 corners"
+
+            solid = self._entity_ctx.select(cq_solid)
+            set_transfinite_solid = SetTransfiniteSolid(solid)
+            self._ctx.add_transaction(set_transfinite_solid)
 
         self._ctx.add_transactions(edge_transactions, ignore_duplicates=True)
 

@@ -10,10 +10,13 @@ from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import OrderedSet
 
 
+CQGroupTypeString = Literal["split", "interior", "exterior"]
+CQEdgeOrFace = Union[cq.Edge, cq.Face]
+
 @dataclass
 class DirectedPath:
     edge: cq.Edge
-    "edge of path"
+    "edge or face of path"
 
     direction: int = 1
     "direction of path"
@@ -24,8 +27,6 @@ class DirectedPath:
         self.vertices = self.edge.Vertices()[::self.direction]
         self.start = self.vertices[0]
         self.end = self.vertices[-1]
-
-CQGroupTypeString = Literal["split", "interior", "exterior"]
 
 
 class CQLinq:
@@ -100,53 +101,52 @@ class CQLinq:
                 yield occ_obj
 
     @staticmethod
-    def sort(target: Union[CQObject, Sequence[CQObject]]):
-        unsorted_edges = cast(list[cq.Edge], list(CQLinq.select(target, EntityType.edge)))
-        edges = list(unsorted_edges[1:])
-        sorted_paths = [DirectedPath(unsorted_edges[0])]
-        while edges:
-            for i, edge in enumerate(edges):
-                vertices = edge.Vertices()
+    def sort(target: Union[CQEdgeOrFace, Sequence[CQEdgeOrFace]]):
+        objs = [target] if isinstance(target, CQEdgeOrFace) else target
+
+        unsorted_cq_edges = cast(Sequence[CQEdgeOrFace], list(CQLinq.select(objs, EntityType.edge)))
+        cq_edges = list(unsorted_cq_edges[1:])
+        sorted_paths = [DirectedPath(unsorted_cq_edges[0])]
+        while cq_edges:
+            for i, cq_edge in enumerate(cq_edges):
+                vertices = cq_edge.Vertices()
                 if vertices[0].toTuple() == sorted_paths[-1].end.toTuple():
-                    sorted_paths.append(DirectedPath(edge))
-                    edges.pop(i)
+                    sorted_paths.append(DirectedPath(cq_edge))
+                    cq_edges.pop(i)
                     break
                 elif vertices[-1].toTuple() == sorted_paths[-1].end.toTuple():
-                    sorted_paths.append(DirectedPath(edge, direction=-1))
-                    edges.pop(i)
+                    sorted_paths.append(DirectedPath(cq_edge, direction=-1))
+                    cq_edges.pop(i)
                     break
                 elif vertices[0].toTuple() == sorted_paths[0].start.toTuple():
-                    sorted_paths.insert(0, DirectedPath(edge, direction=-1))
-                    edges.pop(i)
+                    sorted_paths.insert(0, DirectedPath(cq_edge, direction=-1))
+                    cq_edges.pop(i)
                     break
             else:
                 raise ValueError("Edges do not form a closed loop")
         
+        assert sorted_paths[-1].end == sorted_paths[0].start, "Edges do not form a closed loop"
         return sorted_paths
     
-    @staticmethod
-    def _add_to_group(
-        wires: Iterable[cq.Wire],
-        registry: OrderedSet[CQObject],
-    ):
-        for wire in wires:
-            registry.add(wire)
-            for edge in wire.Edges():
-                registry.add(edge)
-            for vertex in wire.Vertices():
-                registry.add(vertex)
 
     @staticmethod
-    def group(
+    def groupByTypes(
         target: Union[cq.Workplane, Sequence[CQObject]], 
         split_faces: Optional[OrderedSet[CQObject]] = None
-    ):
+    ):   
+        add_wire_to_group = lambda wires, group: group.update([
+            *wires,
+            *CQLinq.select(wires, EntityType.edge),
+            *CQLinq.select(wires, EntityType.vertex),
+        ])
+        
         groups: dict[CQGroupTypeString, OrderedSet[CQObject]] = {
             "split": OrderedSet[CQObject](),
             "interior": OrderedSet[CQObject](),
             "exterior": OrderedSet[CQObject](),
         }
         faces = list(CQLinq.select(target, EntityType.face))
+
         if len(faces) > 0:
             for face in faces:
                 assert isinstance(face, cq.Face), "object must be a face"
@@ -156,19 +156,51 @@ class CQLinq:
                     interior_face = CQLinq.is_interior_face(face) 
                     face_registry = groups["interior" if interior_face else "exterior"]
                 face_registry.add(face)
-                CQLinq._add_to_group(face.Wires(), face_registry)
+                add_wire_to_group(face.Wires(), face_registry)
         else:
-            CQLinq._add_to_group(faces[0].innerWires(), groups["interior"])
-            CQLinq._add_to_group([faces[0].outerWire()], groups["exterior"])
+            first_face = cast(cq.Face, faces[0])
+            add_wire_to_group(first_face.innerWires(), groups["interior"])
+            add_wire_to_group([first_face.outerWire()], groups["exterior"])
 
         return groups
+
+    @staticmethod
+    def groupByAngles(objs: Sequence[CQEdgeOrFace], angle_threshold: float):
+        sorted_paths = CQLinq.sort(objs)
+
+        # 1) gather sorted angles of edges
+        # 2) shuffle to next group in case in the middle of current group
+        angles = []
+        prev_path = sorted_paths[-1]
+        shuffle_num, shuffle_cutoff = 0, False
+        for path in sorted_paths: # type: ignore
+            angle = CQExtensions.get_angle_between(prev_path.edge, path.edge)
+            
+            if shuffle_cutoff:
+                if angle > np.radians(angle_threshold):
+                    shuffle_cutoff = True
+                shuffle_num += 1
+
+            angles.append(angle)
+            prev_path = path
+
+        # arrange groups based on angles
+        groups: list[list[DirectedPath]] = []
+        for i, angle in enumerate(angles[shuffle_num:] + angles[:shuffle_num]):
+            path = sorted_paths[i+shuffle_num]
+            if angle > np.radians(angle_threshold):
+                groups.append([])
+            groups[-1].append(path)
+        return groups
+
+
 
 class CQExtensions:
     @staticmethod
     def find_nearest_point(workplane: cq.Workplane, near_point: cq.Vertex, tolerance: float = 1e-2):
         min_dist_vertex, min_dist = None, float("inf")
         for vertex in workplane.vertices().vals():
-            dist = vertex.distance(near_point)
+            dist = cast(cq.Vertex, vertex).distance(near_point)
             if dist < min_dist and dist <= tolerance:
                 min_dist_vertex, min_dist = vertex, dist
         return min_dist_vertex
@@ -192,6 +224,18 @@ class CQExtensions:
         return min_dist_vertex
 
     @staticmethod
+    def get_angle_between(prev: CQEdgeOrFace, curr: CQEdgeOrFace):
+        if isinstance(prev, cq.Edge) and isinstance(curr, cq.Edge):
+            prev_tangent_vec = prev.tangentAt(0.5) # type: ignore
+            tangent_vec = curr.tangentAt(0.5)      # type: ignore
+        else:
+            prev_tangent_vec = prev.normalAt() # type: ignore
+            tangent_vec = curr.normalAt()      # type: ignore
+        angle = np.arccos(prev_tangent_vec.dot(tangent_vec)/(prev_tangent_vec.Length * tangent_vec.Length))
+        assert not np.isnan(angle), "angle should not be NaN"
+        return angle
+
+    @staticmethod
     def plot_groups(
         groups: Sequence[Sequence[CQObject]], 
         title: str = "Group Plot", 
@@ -203,8 +247,12 @@ class CQExtensions:
         for i, group in enumerate(groups):
             group_coords = []
             sampling = get_sampling(0, 1, samples_per_spline, False)
-            for edge in group:
-                group_coords += [vec.toTuple() for vec in edge.positions(sampling)]
+            for obj in group:
+                edge_batches = CQLinq.select_batch([obj], EntityType.face, EntityType.edge)
+                for edges in edge_batches:
+                    paths = CQLinq.sort(edges)
+                    for path in paths:
+                        group_coords += [vec.toTuple() for vec in path.edge.positions(sampling)] # type: ignore
             add_plot(np.array(group_coords), fig, f"Group {i}")
 
         fig.layout.yaxis.scaleanchor = "x"  # type: ignore

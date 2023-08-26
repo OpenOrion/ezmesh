@@ -10,19 +10,31 @@ from ezmesh.utils.types import OrderedSet
 TransfiniteArrangementType = Literal["Left", "Right", "AlternateLeft", "AlternateRight"]
 TransfiniteMeshType = Literal["Progression", "Bump", "Beta"]
 
+# stochastic rounding 
 
-def get_num_nodes_for_ratios(num_nodes: int, ratios: Sequence[float]):
+
+def get_num_nodes_for_ratios(total_num_nodes: int, ratios: Sequence[float]):
     assert np.round(np.sum(ratios), 5) == 1, "Ratios must sum to 1"
-    assert num_nodes > len(ratios), f"Number of nodes must be greater than number of ratios {len(ratios)}"
-    allocated_nodes = [int(ratio * num_nodes) for ratio in ratios]
-    remaining_nodes = num_nodes - sum(allocated_nodes)
-    remaining_ratio_indices = sorted(range(len(ratios)), key=lambda i: ratios[i], reverse=True)
-    for i in remaining_ratio_indices:
-        if remaining_nodes > 0:
-            allocated_nodes[i] += 1
-            remaining_nodes -= 1
-    
-    assert sum(allocated_nodes) == num_nodes, "Number of allocated nodes must equal num_nodes"
+    assert total_num_nodes > len(ratios), f"Number of nodes must be greater than number of ratios {len(ratios)}"
+    allocated_nodes = []
+    for ratio in ratios:
+        num_nodes = int(np.round(ratio * total_num_nodes)) or 1
+        allocated_nodes.append(num_nodes)
+
+    # remove nodes uniformly from highest ratios
+    descending_ratio_indexes = sorted(range(len(ratios)), key=lambda i: -ratios[i])
+    num_allocated_nodes = sum(allocated_nodes)
+    if num_allocated_nodes > total_num_nodes:
+        total_node_diff = num_allocated_nodes - total_num_nodes
+        for i in descending_ratio_indexes:
+            if allocated_nodes[i] > 1:
+                allocated_node_diff = int(np.ceil(total_node_diff*ratios[i]))
+                allocated_nodes[i] -= allocated_node_diff
+                num_allocated_nodes -= allocated_node_diff
+            if num_allocated_nodes == total_num_nodes:
+                break
+    assert sum(allocated_nodes) == total_num_nodes, f"Number of allocated nodes must equal num_nodes, {num_allocated_nodes} != {num_nodes}"
+
     return allocated_nodes
 
 @dataclass(eq=False)

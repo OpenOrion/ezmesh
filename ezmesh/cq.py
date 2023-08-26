@@ -245,10 +245,3 @@ def get_selector(selector: Union[cq.Selector, str, None], group: Optional[Ordere
             prev_selector = cq.selectors.AndSelector(prev_selector, selector)
         return prev_selector
 
-
-def get_edge_angle(prev_edge: cq.Edge, edge: cq.Edge):
-    prev_tangent_vec = prev_edge.tangentAt(0.5)
-    tangent_vec = edge.tangentAt(0.5)                    
-    angle = np.arccos(prev_tangent_vec.dot(tangent_vec)/(prev_tangent_vec.Length * tangent_vec.Length))
-    assert not np.isnan(angle), "angle should not be NaN"
-    return angle
