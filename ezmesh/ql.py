@@ -13,7 +13,7 @@ from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSm
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType, get_num_nodes_for_ratios
 from ezmesh.mesh.exporters import export_to_su2
 from ezmesh.cq import CQEntityContext, EntityType, get_selector, import_workplane, split_workplane, plot_workplane, tag_workplane
-from ezmesh.utils.cq import CQExtensions, CQGroupTypeString, CQLinq
+from ezmesh.utils.cq import CQGroupTypeString, CQLinq
 from ezmesh.visualizer import visualize_mesh
 from jupyter_cadquery import show
 
@@ -45,9 +45,7 @@ class GeometryQL:
         self._pre_split_workplane = workplane = import_workplane(target)
 
         if splits:
-            result = split_workplane(self._pre_split_workplane, splits(self._pre_split_workplane))
-            workplane = result.workplane
-            self._split_faces = result.faces
+            workplane = split_workplane(self._pre_split_workplane, splits(self._pre_split_workplane))
             
         self._workplane = self._initial_workplane = workplane
         self._entity_ctx = CQEntityContext(self._workplane)
@@ -181,6 +179,7 @@ class GeometryQL:
     def setTransfiniteAuto(self, num_nodes: int = 50, group_angle: float = 45):
         # transfinite_auto = SetTransfiniteAuto()
         # self._ctx.add_transaction(transfinite_auto)
+        self.is_structured = True
         edge_transactions = []
         for cq_solid in CQLinq.select(self._workplane, EntityType.solid):
             faces = cq_solid.Faces()

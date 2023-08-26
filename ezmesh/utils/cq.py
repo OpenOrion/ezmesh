@@ -8,7 +8,8 @@ from ezmesh.entity import EntityType
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import OrderedSet
-
+from jupyter_cadquery import show_object
+from OCP.BRep import BRep_Tool
 
 CQGroupTypeString = Literal["split", "interior", "exterior"]
 CQEdgeOrFace = Union[cq.Edge, cq.Face]
@@ -30,14 +31,6 @@ class DirectedPath:
 
 
 class CQLinq:
-    @staticmethod
-    def is_interior_face(face: CQObject, invert: bool = False):
-        assert isinstance(face, cq.Face), "object must be a face"
-        face_normal = face.normalAt()
-        face_centroid = face.Center()
-        interior_dot_product = face_normal.dot(face_centroid)
-        return (not invert and interior_dot_product < 0) or (invert and interior_dot_product >= 0)
-
     @staticmethod
     def select_tagged(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: EntityType):
         for tag in ([tags] if isinstance(tags, str) else tags):
@@ -130,10 +123,8 @@ class CQLinq:
     
 
     @staticmethod
-    def groupByTypes(
-        target: Union[cq.Workplane, Sequence[CQObject]], 
-        split_faces: Optional[OrderedSet[CQObject]] = None
-    ):   
+    def groupByTypes(target: Union[cq.Workplane, Sequence[CQObject]]): 
+        workplane = target if isinstance(target, cq.Workplane) else cq.Workplane().add(target)
         add_wire_to_group = lambda wires, group: group.update([
             *wires,
             *CQLinq.select(wires, EntityType.edge),
@@ -146,15 +137,16 @@ class CQLinq:
             "exterior": OrderedSet[CQObject](),
         }
         faces = list(CQLinq.select(target, EntityType.face))
-
         if len(faces) > 0:
             for face in faces:
                 assert isinstance(face, cq.Face), "object must be a face"
-                if split_faces and face in split_faces:
+                split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5)))
+                is_interior = CQExtensions.is_interior_face(face) 
+
+                if split_intersect:
                     face_registry = groups["split"]
                 else:
-                    interior_face = CQLinq.is_interior_face(face) 
-                    face_registry = groups["interior" if interior_face else "exterior"]
+                    face_registry = groups["interior" if is_interior else "exterior"]
                 face_registry.add(face)
                 add_wire_to_group(face.Wires(), face_registry)
         else:
@@ -188,7 +180,7 @@ class CQLinq:
         groups: list[list[DirectedPath]] = []
         for i, angle in enumerate(angles[shuffle_num:] + angles[:shuffle_num]):
             path = sorted_paths[i+shuffle_num]
-            if angle > np.radians(angle_threshold):
+            if angle >= np.radians(angle_threshold):
                 groups.append([])
             groups[-1].append(path)
         return groups
@@ -196,6 +188,26 @@ class CQLinq:
 
 
 class CQExtensions:
+    @staticmethod
+    def get_plane(face: cq.Face):
+        origin = face.Center()
+        normal = face.normalAt()
+        x_dir = cq.Vector(0, 0, 1).cross(normal)
+        if x_dir.Length == 0:
+            x_dir = cq.Vector(
+                BRep_Tool.Surface_s(face.wrapped).Position().XDirection()
+            )
+        return cq.Plane(origin, x_dir, normal)
+
+
+    @staticmethod
+    def is_interior_face(face: CQObject, invert: bool = False):
+        assert isinstance(face, cq.Face), "object must be a face"
+        face_normal = face.normalAt()
+        face_centroid = face.Center()
+        interior_dot_product = face_normal.dot(face_centroid)
+        return (not invert and interior_dot_product < 0) or (invert and interior_dot_product >= 0)
+
     @staticmethod
     def find_nearest_point(workplane: cq.Workplane, near_point: cq.Vertex, tolerance: float = 1e-2):
         min_dist_vertex, min_dist = None, float("inf")
@@ -206,7 +218,7 @@ class CQExtensions:
         return min_dist_vertex
 
     @staticmethod
-    def split_intersect(workplane: cq.Workplane, anchor: VectorLike, splitter: cq.Face, snap_tolerance: Optional[float] = None):
+    def split_intersect(workplane: cq.Workplane, anchor: VectorLike, splitter: CQObject, snap_tolerance: Optional[float] = None):
         intersected_vertices = workplane.intersect(cq.Workplane(splitter)).vertices().vals()
         min_dist_vertex, min_dist = None, float("inf") 
         for vertex in intersected_vertices:
@@ -216,8 +228,7 @@ class CQExtensions:
                 if intersect_dist < min_dist:
                     min_dist_vertex, min_dist = vertex, intersect_dist
             except: ...
-        assert isinstance(min_dist_vertex, cq.Vertex), "No intersected vertex found"
-        if snap_tolerance:
+        if snap_tolerance and min_dist_vertex:
             nearest_point = CQExtensions.find_nearest_point(workplane, min_dist_vertex, snap_tolerance)
             if nearest_point:
                 return nearest_point

@@ -11,7 +11,6 @@ from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import OrderedSet
 from jupyter_cadquery import show_object
 from ezmesh.utils.types import NumpyFloat
-from OCP.BRep import BRep_Tool
 
 class CQEntityContext:
     "Maps OCC objects to gmsh entity tags"
@@ -136,30 +135,11 @@ class Split:
         return Split.from_pnts(workplane, [*edges_pnts[:,0].tolist(),*edges_pnts[:,1][::-1].tolist()])
 
 
-def get_plane(face: cq.Face):
-    origin = face.Center()
-    normal = face.normalAt()
-    x_dir = cq.Vector(0, 0, 1).cross(normal)
-    if x_dir.Length == 0:
-        x_dir = cq.Vector(
-            BRep_Tool.Surface_s(face.wrapped).Position().XDirection()
-        )
-    return cq.Plane(origin, x_dir, normal)
-
-@dataclass
-class SplitResult:
-    workplane: cq.Workplane
-    faces: OrderedSet[CQObject]
 
 def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face]):
-    split_faces = OrderedSet[CQObject]()
     for split in splits:      
         workplane = workplane.split(split)
-        intersected_worplane = workplane.intersect(cq.Workplane(split))
-        split_faces.update(intersected_worplane.faces().vals())
-    return SplitResult(workplane, split_faces)
-    
-
+    return workplane
 
 def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
     if isinstance(target, str):
