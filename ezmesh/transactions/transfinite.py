@@ -1,17 +1,13 @@
 import gmsh
-from dataclasses import dataclass, field
-from typing import Literal, Optional, Sequence
-
 import numpy as np
-from ezmesh.entity import Entity, EntityType
+from dataclasses import dataclass
+from typing import Literal, Optional, Sequence
+from ezmesh.entity import Entity, ENTITY_DIM_MAPPING
 from ezmesh.transaction import SingleEntityTransaction, MultiEntityTransaction, Transaction
 from ezmesh.utils.types import OrderedSet
 
 TransfiniteArrangementType = Literal["Left", "Right", "AlternateLeft", "AlternateRight"]
 TransfiniteMeshType = Literal["Progression", "Bump", "Beta"]
-
-# stochastic rounding 
-
 
 def get_num_nodes_for_ratios(total_num_nodes: int, ratios: Sequence[float]):
     assert np.round(np.sum(ratios), 5) == 1, "Ratios must sum to 1"
@@ -33,7 +29,9 @@ def get_num_nodes_for_ratios(total_num_nodes: int, ratios: Sequence[float]):
                 num_allocated_nodes -= allocated_node_diff
             if num_allocated_nodes == total_num_nodes:
                 break
-    assert sum(allocated_nodes) == total_num_nodes, f"Number of allocated nodes must equal num_nodes, {num_allocated_nodes} != {num_nodes}"
+    assert sum(allocated_nodes) == total_num_nodes, (
+        f"Number of allocated nodes must equal num_nodes, {num_allocated_nodes} != {total_num_nodes}"
+    )
 
     return allocated_nodes
 
@@ -56,7 +54,7 @@ class SetTransfiniteEdge(SingleEntityTransaction):
         self.num_nodes = self.num_elems + 1
 
     def before_gen(self):
-        assert self.entity.type == EntityType.edge, "SetTransfiniteEdge only accepts edges"
+        assert self.entity.type == "edge", "SetTransfiniteEdge only accepts edges"
         gmsh.model.mesh.setTransfiniteCurve(self.entity.tag, self.num_nodes, self.mesh_type, self.coef)
 
 
@@ -69,7 +67,7 @@ class SetTransfiniteEdge(SingleEntityTransaction):
         hwall_n: Optional[float] = None,
         num_layers: Optional[int] = None
     ):
-        assert self.entity.type == EntityType.edge, "StructuredBoundaryLayer only accepts edges"
+        assert self.entity.type == "edge", "StructuredBoundaryLayer only accepts edges"
         if num_layers is None:
             assert hwall_n is not None, "hwall_n must be specified if num_layers is not specified"
             num_elems = np.log((hwall_n + length*ratio - length)/hwall_n)/np.log(ratio)
@@ -96,7 +94,7 @@ class SetTransfiniteFace(SingleEntityTransaction):
     "corner point tags for transfinite face"
 
     def before_gen(self):
-        assert self.entity.type == EntityType.face, "SetTransfiniteFace only accepts faces"
+        assert self.entity.type == "face", "SetTransfiniteFace only accepts faces"
         corner_tags = [corner.tag for corner in self.corners] if self.corners else []
         gmsh.model.mesh.setTransfiniteSurface(self.entity.tag, self.arrangement, corner_tags)
 
@@ -109,7 +107,7 @@ class SetTransfiniteSolid(SingleEntityTransaction):
     "corner point tags for transfinite face"
 
     def before_gen(self):
-        assert self.entity.type == EntityType.solid, "SetTransfiniteSolid only accepts solids"
+        assert self.entity.type == "solid", "SetTransfiniteSolid only accepts solids"
         corner_tags = [corner.tag for corner in self.corners] if self.corners else []
         gmsh.model.mesh.setTransfiniteVolume(self.entity.tag, corner_tags)
 
@@ -122,7 +120,7 @@ class SetCompound(MultiEntityTransaction):
 
     def before_gen(self):
         entity_tags = [entity.tag for entity in self.entities]
-        gmsh.model.mesh.setCompound(EntityType.edge.value, entity_tags)
+        gmsh.model.mesh.setCompound(ENTITY_DIM_MAPPING["edge"], entity_tags)
 
 
 @dataclass(eq=False)

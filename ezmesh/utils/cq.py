@@ -4,13 +4,11 @@ import cadquery as cq
 from cadquery.cq import CQObject, VectorLike
 from typing import Iterable, Literal, Optional, Sequence, Union, cast
 import numpy as np
-from ezmesh.entity import EntityType
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
-from ezmesh.utils.types import OrderedSet
-from jupyter_cadquery import show_object
-from OCP.BRep import BRep_Tool
+from ezmesh.utils.types import OrderedSet, NumpyFloat
 
+CQType = Literal["compound", "solid", "shell", "face", "wire", "edge", "vertex"]
 CQGroupTypeString = Literal["split", "interior", "exterior"]
 CQEdgeOrFace = Union[cq.Edge, cq.Face]
 
@@ -30,56 +28,48 @@ class DirectedPath:
         self.end = self.vertices[-1]
 
 
-class CQLinq:
+
+        
+CQ_TYPE_STR_MAPPING: dict[type[CQObject], CQType] = {
+    cq.Compound: "compound",
+    cq.Solid: "solid",
+    cq.Shell: "shell",
+    cq.Face: "face",
+    cq.Wire: "wire",
+    cq.Edge: "edge",
+    cq.Vertex: "vertex",
+}
+
+class CQLinq:    
     @staticmethod
-    def select_tagged(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: EntityType):
+    def select_tagged(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: CQType):
         for tag in ([tags] if isinstance(tags, str) else tags):
-            yield from CQLinq.select(workplane._getTagged(tag).vals(), type)
+            yield from CQLinq.select(workplane._getTagged(tag).vals(), type)    
 
     @staticmethod
-    def get_entity_type(shape: CQObject):
-        if isinstance(shape, cq.Compound): 
-            return EntityType.compound
-        if isinstance(shape, cq.Solid): 
-            return EntityType.solid
-        if isinstance(shape, cq.Shell): 
-            return EntityType.shell
-        elif isinstance(shape, cq.Face):
-            return EntityType.face
-        elif isinstance(shape, cq.Wire):
-            return EntityType.wire
-        elif isinstance(shape, cq.Edge):
-            return EntityType.edge
-        elif isinstance(shape, cq.Vertex):
-            return EntityType.vertex
-        else:
-            raise NotImplementedError(f"shape {shape} not supported")
-    
-    @staticmethod
-    def select(target: Union[cq.Workplane, Iterable[CQObject], CQObject], type: EntityType):
+    def select(target: Union[cq.Workplane, Iterable[CQObject], CQObject], type: CQType):
         cq_objs = target.vals() if isinstance(target, cq.Workplane) else (target if isinstance(target, Iterable) else [target])
         for occ_obj in cq_objs:
             assert isinstance(occ_obj, cq.Shape), "target must be a shape"
-            if type == EntityType.compound:
+            if type == "compound":
                 yield from occ_obj.Compounds()
-            if type == EntityType.solid:
+            if type == "solid":
                 yield from occ_obj.Solids()
-            elif type == EntityType.shell:
+            elif type == "shell":
                 yield from occ_obj.Shells()
-            elif type == EntityType.face:
+            elif type == "face":
                 yield from occ_obj.Faces()
-            elif type == EntityType.wire:
+            elif type == "wire":
                 yield from occ_obj.Wires()
-            elif type == EntityType.edge:
+            elif type == "edge":
                 yield from occ_obj.Edges()
-            elif type == EntityType.vertex:
+            elif type == "vertex":
                 yield from occ_obj.Vertices()
 
     @staticmethod
-    def select_batch(target: Union[cq.Workplane, Iterable[CQObject]], parent_type: EntityType, child_type: EntityType):
+    def select_batch(target: Union[cq.Workplane, Iterable[CQObject]], parent_type: CQType, child_type: CQType):
         cq_objs = list(target.vals() if isinstance(target, cq.Workplane) else target)
-        entity_type = CQLinq.get_entity_type(cq_objs[0])
-        if entity_type.value == child_type.value:
+        if CQ_TYPE_STR_MAPPING[type(cq_objs[0])] == child_type:
             yield cq_objs
         else:
             parent_cq_objs = CQLinq.select(cq_objs, parent_type)
@@ -94,10 +84,10 @@ class CQLinq:
                 yield occ_obj
 
     @staticmethod
-    def sort(target: Union[CQEdgeOrFace, Sequence[CQEdgeOrFace]]):
-        objs = [target] if isinstance(target, CQEdgeOrFace) else target
+    def sort(target: Union[cq.Edge, Sequence[cq.Edge]]):
+        objs = [target] if isinstance(target, cq.Edge) else target
 
-        unsorted_cq_edges = cast(Sequence[CQEdgeOrFace], list(CQLinq.select(objs, EntityType.edge)))
+        unsorted_cq_edges = cast(Sequence[cq.Edge], list(CQLinq.select(objs, "edge")))
         cq_edges = list(unsorted_cq_edges[1:])
         sorted_paths = [DirectedPath(unsorted_cq_edges[0])]
         while cq_edges:
@@ -127,8 +117,8 @@ class CQLinq:
         workplane = target if isinstance(target, cq.Workplane) else cq.Workplane().add(target)
         add_wire_to_group = lambda wires, group: group.update([
             *wires,
-            *CQLinq.select(wires, EntityType.edge),
-            *CQLinq.select(wires, EntityType.vertex),
+            *CQLinq.select(wires, "edge"),
+            *CQLinq.select(wires, "vertex"),
         ])
         
         groups: dict[CQGroupTypeString, OrderedSet[CQObject]] = {
@@ -136,7 +126,7 @@ class CQLinq:
             "interior": OrderedSet[CQObject](),
             "exterior": OrderedSet[CQObject](),
         }
-        faces = list(CQLinq.select(target, EntityType.face))
+        faces = list(CQLinq.select(target, "face"))
         if len(faces) > 0:
             for face in faces:
                 assert isinstance(face, cq.Face), "object must be a face"
@@ -157,8 +147,12 @@ class CQLinq:
         return groups
 
     @staticmethod
-    def groupByAngles(objs: Sequence[CQEdgeOrFace], angle_threshold: float):
-        sorted_paths = CQLinq.sort(objs)
+    def groupByAngles(cq_edges: Sequence[cq.Edge], angle_threshold: float):
+        # cq_faces = list(CQLinq.select(target, "face"))
+        # for cq_face in cq_faces:
+        # cq_edges = cast(list[cq.Edge], CQLinq.select(face, "edge"))
+
+        sorted_paths = CQLinq.sort(cq_edges)
 
         # 1) gather sorted angles of edges
         # 2) shuffle to next group in case in the middle of current group
@@ -186,20 +180,7 @@ class CQLinq:
         return groups
 
 
-
 class CQExtensions:
-    @staticmethod
-    def get_plane(face: cq.Face):
-        origin = face.Center()
-        normal = face.normalAt()
-        x_dir = cq.Vector(0, 0, 1).cross(normal)
-        if x_dir.Length == 0:
-            x_dir = cq.Vector(
-                BRep_Tool.Surface_s(face.wrapped).Position().XDirection()
-            )
-        return cq.Plane(origin, x_dir, normal)
-
-
     @staticmethod
     def is_interior_face(face: CQObject, invert: bool = False):
         assert isinstance(face, cq.Face), "object must be a face"
@@ -228,7 +209,7 @@ class CQExtensions:
                 if intersect_dist < min_dist:
                     min_dist_vertex, min_dist = vertex, intersect_dist
             except: ...
-        if snap_tolerance and min_dist_vertex:
+        if snap_tolerance and isinstance(min_dist_vertex, cq.Vertex):
             nearest_point = CQExtensions.find_nearest_point(workplane, min_dist_vertex, snap_tolerance)
             if nearest_point:
                 return nearest_point
@@ -246,25 +227,90 @@ class CQExtensions:
         assert not np.isnan(angle), "angle should not be NaN"
         return angle
 
+
     @staticmethod
-    def plot_groups(
-        groups: Sequence[Sequence[CQObject]], 
-        title: str = "Group Plot", 
+    def plot_workplane(
+        target: Union[cq.Workplane, Iterable[CQObject], Iterable[Iterable[CQObject]]], 
+        edge_group_names: Optional[Sequence[str]] = None,
+        title: str = "Plot", 
         samples_per_spline: int = 50,
     ):
         fig = go.Figure(
             layout=go.Layout(title=go.layout.Title(text=title))
         )
-        for i, group in enumerate(groups):
-            group_coords = []
-            sampling = get_sampling(0, 1, samples_per_spline, False)
-            for obj in group:
-                edge_batches = CQLinq.select_batch([obj], EntityType.face, EntityType.edge)
-                for edges in edge_batches:
-                    paths = CQLinq.sort(edges)
-                    for path in paths:
-                        group_coords += [vec.toTuple() for vec in path.edge.positions(sampling)] # type: ignore
-            add_plot(np.array(group_coords), fig, f"Group {i}")
+
+        if isinstance(target, cq.Workplane):
+            edge_groups = [CQLinq.select(target, "edge")]
+        elif isinstance(target, Iterable):
+            edge_groups = [target]
+        else:
+            edge_groups = target
+
+        for i, edges in enumerate(edge_groups):
+            for edge in edges:
+                edge_name = edge_group_names[i] if edge_group_names else f"Edge{i}"
+                sampling = get_sampling(0, 1, samples_per_spline, False)
+                coords = np.array([vec.toTuple() for vec in edge.positions(sampling)], dtype=NumpyFloat) # type: ignore
+                add_plot(coords, fig, edge_name)
 
         fig.layout.yaxis.scaleanchor = "x"  # type: ignore
         fig.show()
+
+    @staticmethod
+    def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
+        if isinstance(target, str):
+            if target.lower().endswith(".step"):
+                workplane = cq.importers.importStep(target)
+            elif target.lower().endswith(".dxf"):
+                workplane = cq.importers.importDXF(target)
+            else:
+                raise ValueError(f"Unsupported file type: {target}")
+        elif isinstance(target, Iterable):
+            workplane = cq.Workplane().newObject(target)
+        else:
+            workplane = target
+        if isinstance(workplane.val(), cq.Wire):
+            workplane = cq.Workplane().newObject(workplane.extrude(-1).faces(">Z").vals())
+
+        workplane.tag("root")
+
+        return workplane
+
+
+    @staticmethod
+    def get_selector(selector: Union[cq.Selector, str, None], group: Optional[OrderedSet[CQObject]], indices: Optional[Sequence[int]] = None):
+        selectors = []
+        if isinstance(selector, str):
+            selector = selectors.append(cq.StringSyntaxSelector(selector))
+        elif isinstance(selector, cq.Selector):
+            selectors.append(selector)
+
+        if group is not None:
+            selectors.append(GroupSelector(group))
+        if indices is not None:
+            selectors.append(IndexSelector(indices))
+
+        if len(selectors) > 0:
+            prev_selector = selectors[0]
+            for selector in selectors[1:]:
+                prev_selector = cq.selectors.AndSelector(prev_selector, selector)
+            return prev_selector
+
+
+class IndexSelector(cq.Selector):
+    def __init__(self, indices: Sequence[int]):
+        self.indices = indices
+    def filter(self, objectList):
+        return [objectList[i] for i in self.indices]
+
+class GroupSelector(cq.Selector):
+    def __init__(self, allow: OrderedSet[CQObject], is_interior: bool = True):
+        self.allow = allow
+        self.is_interior = is_interior
+    def filter(self, objectList):
+        filtered_objs = []
+        for obj in objectList:
+            if obj in self.allow:
+                filtered_objs.append(obj)
+        return filtered_objs
+

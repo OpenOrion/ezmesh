@@ -4,16 +4,16 @@ from cadquery.cq import CQObject
 from typing import Callable, Iterable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
 import numpy as np
-from ezmesh.entity import EntityTypeString
+from ezmesh.entity import CQEntityContext
+from ezmesh.preprocessing.split import split_workplane
 from ezmesh.transaction import TransactionContext
-from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm
+from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm2D
 from ezmesh.transactions.boundary_layer import UnstructuredBoundaryLayer
 from ezmesh.transactions.physical_group import SetPhysicalGroup
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType, get_num_nodes_for_ratios
 from ezmesh.mesh.exporters import export_to_su2
-from ezmesh.cq import CQEntityContext, EntityType, get_selector, import_workplane, split_workplane, plot_workplane, tag_workplane
-from ezmesh.utils.cq import CQGroupTypeString, CQLinq
+from ezmesh.utils.cq import CQExtensions, CQGroupTypeString, CQLinq, CQType
 from ezmesh.visualizer import visualize_mesh
 from jupyter_cadquery import show
 
@@ -42,49 +42,58 @@ class GeometryQL:
     def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], splits: Optional[Callable[[cq.Workplane], Sequence[cq.Face]]] = None):
         assert self._workplane is None, "Workplane is already loaded."
 
-        self._pre_split_workplane = workplane = import_workplane(target)
+        self._pre_split_workplane = workplane = CQExtensions.import_workplane(target)
 
         if splits:
             workplane = split_workplane(self._pre_split_workplane, splits(self._pre_split_workplane))
             
         self._workplane = self._initial_workplane = workplane
         self._entity_ctx = CQEntityContext(self._workplane)
-        self._groups = CQLinq.groupByTypes(self._workplane)
+        self._type_groups = CQLinq.groupByTypes(self._workplane)
 
         topods = self._workplane.toOCC()
         gmsh.model.occ.importShapesNativePointer(topods._address())
         gmsh.model.occ.synchronize()
 
-        tag_workplane(self._workplane, self._entity_ctx)
+        self._tag_workplane()
+
         return self    
     
+
+    def _tag_workplane(self):
+        "Tag all gmsh entity tags to workplane"
+        for cq_type, registry in self._entity_ctx.entity_registries.items():
+            for occ_obj in registry.keys():
+                tag = f"{cq_type}/{registry[occ_obj].tag}"
+                self._workplane.newObject([occ_obj]).tag(tag)
+
     def solids(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, groupType: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = groupType and self._groups[groupType]
-        selector = get_selector(selector, group, indices)
+        group = groupType and self._type_groups[groupType]
+        selector = CQExtensions.get_selector(selector, group, indices)
         self._workplane = self._workplane.solids(selector, tag)
         return self
 
     def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, type: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = type and self._groups[type]
-        selector = get_selector(selector, group, indices)
+        group = type and self._type_groups[type]
+        selector = CQExtensions.get_selector(selector, group, indices)
         self._workplane = self._workplane.faces(selector, tag)
         return self
     
     def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, groupType: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = groupType and self._groups[groupType]
-        selector = get_selector(selector, group, indices)
+        group = groupType and self._type_groups[groupType]
+        selector = CQExtensions.get_selector(selector, group, indices)
         self._workplane = self._workplane.edges(selector, tag)
         return self
 
     def wires(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, groupType: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = groupType and self._groups[groupType]
-        selector = get_selector(selector, group, indices)
+        group = groupType and self._type_groups[groupType]
+        selector = CQExtensions.get_selector(selector, group, indices)
         self._workplane = self._workplane.wires(selector, tag)
         return self
 
     def vertices(self, selector: Selector | str | None = None, tag: str | None = None, groupType: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = groupType and self._groups[groupType]
-        selector = get_selector(selector, group, indices)
+        group = groupType and self._type_groups[groupType]
+        selector = CQExtensions.get_selector(selector, group, indices)
         self._workplane = self._workplane.vertices(selector, tag)
         return self
 
@@ -99,13 +108,12 @@ class GeometryQL:
                 self._workplane.newObject([cq_obj]).tag(names[i])
         return self
 
-    def fromTagged(self, tags: Union[str, Iterable[str]], type: Optional[EntityTypeString] = None, invert: bool = True):        
+    def fromTagged(self, tags: Union[str, Iterable[str]], type: Optional[CQType] = None, invert: bool = True):        
         if isinstance(tags, str) and type is None:
             self._workplane = self._workplane._getTagged(tags)
         elif type is not None:
-            entity_type = EntityType.resolve(type)
-            tagged_objs = CQLinq.select_tagged(self._workplane, tags, entity_type)
-            workplane_objs = CQLinq.select(self._workplane, entity_type)
+            tagged_objs = CQLinq.select_tagged(self._workplane, tags, type)
+            workplane_objs = CQLinq.select(self._workplane, type)
             filtered_objs = CQLinq.filter(workplane_objs, tagged_objs, invert)
             self._workplane = self._workplane.newObject(filtered_objs)
         return self
@@ -119,20 +127,20 @@ class GeometryQL:
         return self
 
     def recombine(self, angle: float = 45):
-        faces = self._entity_ctx.select_many(self._workplane, EntityType.face)
+        faces = self._entity_ctx.select_many(self._workplane, "face")
         recombines = [Recombine(face, angle) for face in faces]
         self._ctx.add_transactions(recombines)
         return self
 
     def setMeshSize(self, size: Union[float, Callable[[float,float,float], float]]):
-        points = self._entity_ctx.select_many(self._workplane, EntityType.vertex)
+        points = self._entity_ctx.select_many(self._workplane, "vertex")
         set_size = SetMeshSize(points, size)
         self._ctx.add_transaction(set_size)
         return self
 
     def setMeshAlgorithm(self, type: MeshAlgorithm2DType, per_face: bool = False):
-        faces = self._entity_ctx.select_many(self._workplane, EntityType.face)
-        set_algorithms = [SetMeshAlgorithm(face, type, per_face) for face in faces]
+        faces = self._entity_ctx.select_many(self._workplane, "face")
+        set_algorithms = [SetMeshAlgorithm2D(face, type, per_face) for face in faces]
         self._ctx.add_transactions(set_algorithms)
         return self
 
@@ -148,7 +156,7 @@ class GeometryQL:
         return self
 
     def setTransfiniteEdge(self, num_node: Union[Sequence[int], int], mesh_type: Union[TransfiniteMeshType, Sequence[TransfiniteMeshType]] = "Progression", coef: Union[float, Sequence[float]] = 1.0):
-        edge_batch = self._entity_ctx.select_batch(self._workplane, EntityType.face, EntityType.edge)
+        edge_batch = self._entity_ctx.select_batch(self._workplane, "face", "edge")
         for edges in edge_batch:
             set_transfinite_edges = [SetTransfiniteEdge(
                 edge, 
@@ -161,7 +169,7 @@ class GeometryQL:
         return self
 
     def setTransfiniteFace(self, arrangement: TransfiniteArrangementType = "Left", corner_indexes: Sequence[int] = []):
-        cq_face_batch = CQLinq.select_batch(self._workplane, EntityType.solid, EntityType.face)
+        cq_face_batch = CQLinq.select_batch(self._workplane, "solid", "face")
         for i, cq_faces in enumerate(cq_face_batch):
             faces = self._entity_ctx.select_many(cq_faces)
             set_transfinite_faces = [SetTransfiniteFace(face, arrangement) for face in faces]
@@ -171,7 +179,7 @@ class GeometryQL:
 
     def setTransfiniteSolid(self):
         self.is_structured = True    
-        solids = self._entity_ctx.select_many(self._workplane, EntityType.solid)
+        solids = self._entity_ctx.select_many(self._workplane, "solid")
         set_transfinite_solids = [SetTransfiniteSolid(solid) for solid in solids]
         self._ctx.add_transactions(set_transfinite_solids)
         return self
@@ -181,15 +189,12 @@ class GeometryQL:
         # self._ctx.add_transaction(transfinite_auto)
         self.is_structured = True
         edge_transactions = []
-        for cq_solid in CQLinq.select(self._workplane, EntityType.solid):
-            faces = cq_solid.Faces()
-            # CQExtensions.plot_groups([[faces[0], faces[1], faces[2]]])
-
+        for cq_solid in CQLinq.select(self._workplane, "solid"):
             for cq_face in cq_solid.Faces():
                 edges_groups = CQLinq.groupByAngles(cq_face.Edges(), group_angle)
                 cq_face_corners = [paths[0].start for paths in edges_groups]
-                if len(edges_groups) != 4:
-                    plot_workplane(cq_face)
+                # if len(edges_groups) != 4:
+                #     plot_workplane(cq_face)
                 assert len(edges_groups) == 4, "Face must have 4 corners"
                 
                 face = self._entity_ctx.select(cq_face)
@@ -198,8 +203,8 @@ class GeometryQL:
                 self._ctx.add_transaction(set_transfinite_face)
                 
                 for i, paths in enumerate(edges_groups):
-                    group_length = np.sum([path.edge.Length() for path in paths])
-                    ratios = [path.edge.Length()/group_length for path in paths]
+                    group_length = np.sum([path.edge.Length() for path in paths]) # type: ignore
+                    ratios = [path.edge.Length()/group_length for path in paths] # type: ignore
                     edge_num_nodes = get_num_nodes_for_ratios(num_nodes, ratios)
                     for j, path in enumerate(paths):
                         assert edge_num_nodes[j] != 0, "edge nodes of 0 detected, raise the num_nodes"
@@ -221,9 +226,9 @@ class GeometryQL:
 
     def addBoundaryLayer(self, ratio: float = 1, hwall_n: Optional[float] = None, num_layers: Optional[int] = None):
         if self.is_structured:
-            boundary_vertices = self._entity_ctx.select_many(self._workplane, EntityType.vertex)
+            boundary_vertices = self._entity_ctx.select_many(self._workplane, "vertex")
             try:
-                for (cq_edge, edge) in self._entity_ctx.entity_registries[EntityType.edge].items():
+                for (cq_edge, edge) in self._entity_ctx.entity_registries["edge"].items():
                     transaction = cast(SetTransfiniteEdge, self._ctx.get_transaction(SetTransfiniteEdge, edge))
                     curr_vertices =  self._entity_ctx.select_many(cq_edge.Vertices()) # type: ignore
                     transaction.update_from_boundary_layer(boundary_vertices, curr_vertices, cq_edge.Length(), ratio, hwall_n, num_layers) # type: ignore
@@ -256,7 +261,8 @@ class GeometryQL:
             assert self._ctx.mesh is not None, "Mesh is not generated yet."
             visualize_mesh(self._ctx.mesh)
         elif type == "plot":
-            plot_workplane(self._workplane, self._entity_ctx)
+            edge_names = [f"Edge{edge.tag}" for edge in self._entity_ctx.select_many(self._workplane, "edge")]
+            CQExtensions.plot_workplane(self._workplane, edge_names)
         else:
             show(self._workplane, theme="dark")
         return self

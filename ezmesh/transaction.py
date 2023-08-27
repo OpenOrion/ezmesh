@@ -66,9 +66,6 @@ class TransactionContext:
                         old_transaction = self.entity_transactions[transaction_id]
                         if isinstance(old_transaction, MultiEntityTransaction):
                             old_transaction.entities.remove(entity)
-                        else:
-                            if str(type(transaction).__name__) == "SetTransfiniteEdge":
-                                print("SetTransfiniteEdge", transaction.entity.tag, old_transaction.num_elems, transaction.num_elems)
                         self.entity_transactions[transaction_id] = transaction
         else:
             self.system_transactions[type(transaction)] = transaction

@@ -30,7 +30,7 @@ class UnstructuredBoundaryLayer(MultiEntityTransaction):
             # geometric series for boundary layer heights
             heights.append(heights[-1] + heights[0] * self.ratio**i)
         
-        dimTags = [(entity.type.value, entity.tag) for entity in self.entities]
+        dimTags = [(entity.dim, entity.tag) for entity in self.entities]
         extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
 
         top = []
