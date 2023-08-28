@@ -81,7 +81,6 @@ class SetTransfiniteEdge(SingleEntityTransaction):
             self.num_elems = num_elems
             self.coef = -ratio
 
-
 @dataclass(eq=False)
 class SetTransfiniteFace(SingleEntityTransaction):
     entity: Entity

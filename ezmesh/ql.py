@@ -155,12 +155,12 @@ class GeometryQL:
         self._ctx.add_transaction(refine)
         return self
 
-    def setTransfiniteEdge(self, num_node: Union[Sequence[int], int], mesh_type: Union[TransfiniteMeshType, Sequence[TransfiniteMeshType]] = "Progression", coef: Union[float, Sequence[float]] = 1.0):
+    def setTransfiniteEdge(self, num_nodes: Union[Sequence[int], int], mesh_type: Union[TransfiniteMeshType, Sequence[TransfiniteMeshType]] = "Progression", coef: Union[float, Sequence[float]] = 1.0):
         edge_batch = self._entity_ctx.select_batch(self._workplane, "face", "edge")
         for edges in edge_batch:
             set_transfinite_edges = [SetTransfiniteEdge(
                 edge, 
-                num_node if isinstance(num_node, int) else num_node[i], 
+                num_nodes if isinstance(num_nodes, int) else num_nodes[i], 
                 mesh_type if isinstance(mesh_type, str) else mesh_type[i], 
                 coef if isinstance(coef, float) else coef[i]
             ) for i,edge in enumerate(edges)]

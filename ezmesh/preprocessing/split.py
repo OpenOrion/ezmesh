@@ -44,15 +44,21 @@ class Split:
         dir: Literal["X", "Y", "Z"] = "Z"
     ):
         edges_pnts = np.array([edges] if isinstance(edges, tuple) else edges)
+        maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
+
+
         if len(edges_pnts) == 1:
             top_pnts = edges_pnts[0]
-            maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
             bottom_pnts = np.array(top_pnts)
-            bottom_pnts[:, {"X": 0, "Y": 1, "Z": 2}[dir]] = -maxDim
+        else:
+            top_pnts = edges_pnts[:,0]
+            bottom_pnts = edges_pnts[:,1]
 
-            return Split.from_pnts(workplane, [*top_pnts.tolist(), *bottom_pnts[::-1].tolist()])
+        top_pnts[:, {"X": 0, "Y": 1, "Z": 2}[dir]] = maxDim
+        bottom_pnts[:, {"X": 0, "Y": 1, "Z": 2}[dir]] = -maxDim
 
-        return Split.from_pnts(workplane, [*edges_pnts[:,0].tolist(),*edges_pnts[:,1][::-1].tolist()])
+        return Split.from_pnts(workplane, [*top_pnts.tolist(), *bottom_pnts[::-1].tolist()])
+
 
 def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face]):
     for split in splits:      
