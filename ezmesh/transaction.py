@@ -83,8 +83,8 @@ class TransactionContext:
         for transaction in transactions:
             transaction.before_gen()
 
-        gmsh.write("test.geo_unrolled")
-        gmsh.fltk.run()
+        # gmsh.write("test.geo_unrolled")
+        # gmsh.fltk.run()
 
         gmsh.model.mesh.generate(dim)
 

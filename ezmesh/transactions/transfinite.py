@@ -58,28 +58,6 @@ class SetTransfiniteEdge(SingleEntityTransaction):
         gmsh.model.mesh.setTransfiniteCurve(self.entity.tag, self.num_nodes, self.mesh_type, self.coef)
 
 
-    def update_from_boundary_layer(
-        self, 
-        boundary_vertices: OrderedSet[Entity], 
-        curr_vertices: OrderedSet[Entity],
-        length: float,
-        ratio: float,
-        hwall_n: Optional[float] = None,
-        num_layers: Optional[int] = None
-    ):
-        assert self.entity.type == "edge", "StructuredBoundaryLayer only accepts edges"
-        if num_layers is None:
-            assert hwall_n is not None, "hwall_n must be specified if num_layers is not specified"
-            num_elems = np.log((hwall_n + length*ratio - length)/hwall_n)/np.log(ratio)
-        else:
-            num_elems = num_layers
-        
-        if curr_vertices.first in boundary_vertices and curr_vertices.last not in boundary_vertices:
-            self.num_elems = num_elems
-            self.coef = ratio
-        elif curr_vertices.last in boundary_vertices and curr_vertices.first not in boundary_vertices:
-            self.num_elems = num_elems
-            self.coef = -ratio
 
 @dataclass(eq=False)
 class SetTransfiniteFace(SingleEntityTransaction):

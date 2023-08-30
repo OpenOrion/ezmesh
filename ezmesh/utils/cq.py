@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from plotly import graph_objects as go
 import cadquery as cq
 from cadquery.cq import CQObject, VectorLike
-from typing import Iterable, Literal, Optional, Sequence, Union, cast
+from typing import Callable, Iterable, Literal, Optional, Sequence, Union, cast
 import numpy as np
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
@@ -42,29 +42,34 @@ CQ_TYPE_STR_MAPPING: dict[type[CQObject], CQType] = {
 
 class CQLinq:    
     @staticmethod
-    def select_tagged(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: CQType):
+    def select_tagged(workplane: cq.Workplane, tags: Union[str, Iterable[str]], type: Optional[CQType] = None):
         for tag in ([tags] if isinstance(tags, str) else tags):
-            yield from CQLinq.select(workplane._getTagged(tag).vals(), type)    
+            if type is None:
+                yield from workplane._getTagged(tag).vals()
+            else:
+               yield from CQLinq.select(workplane._getTagged(tag).vals(), type)    
 
     @staticmethod
-    def select(target: Union[cq.Workplane, Iterable[CQObject], CQObject], type: CQType):
+    def select(target: Union[cq.Workplane, Iterable[CQObject], CQObject], type: Optional[CQType] = None):
         cq_objs = target.vals() if isinstance(target, cq.Workplane) else (target if isinstance(target, Iterable) else [target])
-        for occ_obj in cq_objs:
-            assert isinstance(occ_obj, cq.Shape), "target must be a shape"
-            if type == "compound":
-                yield from occ_obj.Compounds()
-            if type == "solid":
-                yield from occ_obj.Solids()
+        for cq_obj in cq_objs:
+            assert isinstance(cq_obj, cq.Shape), "target must be a shape"
+            if type is None:
+                yield cq_obj
+            elif type == "compound":
+                yield from cq_obj.Compounds()
+            elif type == "solid":
+                yield from cq_obj.Solids()
             elif type == "shell":
-                yield from occ_obj.Shells()
+                yield from cq_obj.Shells()
             elif type == "face":
-                yield from occ_obj.Faces()
+                yield from cq_obj.Faces()
             elif type == "wire":
-                yield from occ_obj.Wires()
+                yield from cq_obj.Wires()
             elif type == "edge":
-                yield from occ_obj.Edges()
+                yield from cq_obj.Edges()
             elif type == "vertex":
-                yield from occ_obj.Vertices()
+                yield from cq_obj.Vertices()
 
     @staticmethod
     def select_batch(target: Union[cq.Workplane, Iterable[CQObject]], parent_type: CQType, child_type: CQType):
@@ -146,6 +151,23 @@ class CQLinq:
 
         return groups
 
+
+    @staticmethod
+    def groupBy(target: Union[cq.Workplane, Sequence[CQObject]], parent_type: CQType, child_type: CQType): 
+        groups: dict[CQObject, set[CQObject]] = {}
+        
+        cq_objs = target.vals() if isinstance(target, cq.Workplane) else (target if isinstance(target, Iterable) else [target])
+        for cq_obj in cq_objs:
+            parents = CQLinq.select(cq_obj, parent_type)
+            for parent in parents:
+                children = CQLinq.select(parent, child_type)
+                for child in children:
+                    if child not in groups:
+                        groups[child] = set[CQObject]()
+                    groups[child].add(parent)
+        return groups
+
+
     @staticmethod
     def groupByAngles(cq_edges: Sequence[cq.Edge], angle_threshold: float):
         # cq_faces = list(CQLinq.select(target, "face"))
@@ -179,6 +201,12 @@ class CQLinq:
             groups[-1].append(path)
         return groups
 
+    @staticmethod
+    def find(target: Union[cq.Workplane, Iterable[CQObject]], where: Callable[[CQObject], bool]):
+        cq_objs = target.vals() if isinstance(target, cq.Workplane) else (target if isinstance(target, Iterable) else [target])
+        for cq_obj in cq_objs:
+            if where(cq_obj):
+                yield cq_obj
 
 class CQExtensions:
     @staticmethod
@@ -223,14 +251,14 @@ class CQExtensions:
         else:
             prev_tangent_vec = prev.normalAt() # type: ignore
             tangent_vec = curr.normalAt()      # type: ignore
-        angle = np.arccos(prev_tangent_vec.dot(tangent_vec)/(prev_tangent_vec.Length * tangent_vec.Length))
+        angle = prev_tangent_vec.getAngle(tangent_vec)
         assert not np.isnan(angle), "angle should not be NaN"
         return angle
 
 
     @staticmethod
     def plot_workplane(
-        target: Union[cq.Workplane, Iterable[CQObject], Iterable[Iterable[CQObject]]], 
+        target: Union[cq.Workplane, CQObject, Sequence[CQObject], Sequence[Sequence[DirectedPath]], Sequence[Sequence[CQObject]]], 
         edge_group_names: Optional[Sequence[str]] = None,
         title: str = "Plot", 
         samples_per_spline: int = 50,
@@ -241,10 +269,16 @@ class CQExtensions:
 
         if isinstance(target, cq.Workplane):
             edge_groups = [CQLinq.select(target, "edge")]
-        elif isinstance(target, Iterable):
-            edge_groups = [target]
+        elif isinstance(target, CQObject):
+            edge_groups = [CQLinq.select(target, "edge")]
+        elif isinstance(target, Sequence) and isinstance(target[0], CQObject):
+            edge_groups = [cast(Sequence[CQObject], target)]
         else:
-            edge_groups = target
+            target = cast(Sequence[Sequence], target)
+            if isinstance(target[0][0], DirectedPath):
+                edge_groups = [[path.edge for path in group] for group in target]
+            else:
+                edge_groups = cast(Sequence[Iterable[CQObject]], target)
 
         for i, edges in enumerate(edge_groups):
             for edge in edges:

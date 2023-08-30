@@ -13,7 +13,7 @@ from ezmesh.transactions.physical_group import SetPhysicalGroup
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType, get_num_nodes_for_ratios
 from ezmesh.mesh.exporters import export_to_su2
-from ezmesh.utils.cq import CQExtensions, CQGroupTypeString, CQLinq, CQType
+from ezmesh.utils.cq import CQ_TYPE_STR_MAPPING, CQExtensions, CQGroupTypeString, CQLinq, CQType
 from ezmesh.visualizer import visualize_mesh
 from jupyter_cadquery import show
 
@@ -50,8 +50,9 @@ class GeometryQL:
         self._workplane = self._initial_workplane = workplane
         self._entity_ctx = CQEntityContext(self._workplane)
         self._type_groups = CQLinq.groupByTypes(self._workplane)
-
+        self._solid_edge_groups = CQLinq.groupBy(self._workplane, "solid", "edge")
         topods = self._workplane.toOCC()
+
         gmsh.model.occ.importShapesNativePointer(topods._address())
         gmsh.model.occ.synchronize()
 
@@ -108,12 +109,13 @@ class GeometryQL:
                 self._workplane.newObject([cq_obj]).tag(names[i])
         return self
 
-    def fromTagged(self, tags: Union[str, Iterable[str]], type: Optional[CQType] = None, invert: bool = True):        
-        if isinstance(tags, str) and type is None:
+    def fromTagged(self, tags: Union[str, Iterable[str]], resolve_type: Optional[CQType] = None, invert: bool = True):        
+        if isinstance(tags, str) and resolve_type is None:
             self._workplane = self._workplane._getTagged(tags)
-        elif type is not None:
-            tagged_objs = CQLinq.select_tagged(self._workplane, tags, type)
-            workplane_objs = CQLinq.select(self._workplane, type)
+        else:
+            tagged_objs = list(CQLinq.select_tagged(self._workplane, tags, resolve_type))
+            tagged_cq_type = CQ_TYPE_STR_MAPPING[type(tagged_objs[0])]
+            workplane_objs = CQLinq.select(self._workplane, tagged_cq_type)
             filtered_objs = CQLinq.filter(workplane_objs, tagged_objs, invert)
             self._workplane = self._workplane.newObject(filtered_objs)
         return self
@@ -193,8 +195,8 @@ class GeometryQL:
             for cq_face in cq_solid.Faces():
                 edges_groups = CQLinq.groupByAngles(cq_face.Edges(), group_angle)
                 cq_face_corners = [paths[0].start for paths in edges_groups]
-                # if len(edges_groups) != 4:
-                #     plot_workplane(cq_face)
+                if len(edges_groups) != 4:
+                    CQExtensions.plot_workplane(edges_groups)
                 assert len(edges_groups) == 4, "Face must have 4 corners"
                 
                 face = self._entity_ctx.select(cq_face)
@@ -226,14 +228,38 @@ class GeometryQL:
 
     def addBoundaryLayer(self, ratio: float = 1, hwall_n: Optional[float] = None, num_layers: Optional[int] = None):
         if self.is_structured:
-            boundary_vertices = self._entity_ctx.select_many(self._workplane, "vertex")
-            try:
-                for (cq_edge, edge) in self._entity_ctx.entity_registries["edge"].items():
-                    transaction = cast(SetTransfiniteEdge, self._ctx.get_transaction(SetTransfiniteEdge, edge))
-                    curr_vertices =  self._entity_ctx.select_many(cq_edge.Vertices()) # type: ignore
-                    transaction.update_from_boundary_layer(boundary_vertices, curr_vertices, cq_edge.Length(), ratio, hwall_n, num_layers) # type: ignore
-            except KeyError:
-                raise Exception("Structured boundary layer can only be applied after setTransfiniteEdge")
+            boundary_edges = list(CQLinq.select(self._workplane, "edge"))
+            boundary_vertices = list([vertex for edge in boundary_edges for vertex in edge.Vertices()])
+            # try:
+            for (cq_edge, edge) in self._entity_ctx.entity_registries["edge"].items():
+                transaction = cast(SetTransfiniteEdge, self._ctx.get_transaction(SetTransfiniteEdge, edge))
+                assert edge.type == "edge", "StructuredBoundaryLayer only accepts edges"
+                if num_layers is None:
+                    assert hwall_n is not None, "hwall_n must be specified if num_layers is not specified"
+                    edge_length = cq_edge.Length() # type: ignore
+                    num_elems = np.log((hwall_n + edge_length*ratio - edge_length)/hwall_n)/np.log(ratio)
+                else:
+                    num_elems = num_layers
+                
+                edge_solids = self._solid_edge_groups[cq_edge]
+
+                cq_curr_edge_vertices =  cq_edge.Vertices()
+                if cq_curr_edge_vertices[0] in boundary_vertices and cq_curr_edge_vertices[-1] not in boundary_vertices:
+                    # vertex_index = boundary_vertices.index(cq_curr_edge_vertices[0])
+                    # cq_boundary_edge = boundary_edges[vertex_index]
+                    transaction.num_elems = num_elems
+                    transaction.coef = ratio
+                elif cq_curr_edge_vertices[-1] in boundary_vertices and cq_curr_edge_vertices[0] not in boundary_vertices:
+                    vertex_index = boundary_vertices.index(cq_curr_edge_vertices[-1])
+                    cq_boundary_edge = boundary_edges[vertex_index-1]
+                    boundary_solids = self._solid_edge_groups[cq_boundary_edge]
+                    # if edge_solids & boundary_solids:
+                    transaction.num_elems = num_elems
+                    transaction.coef = -ratio
+                    # else:
+                    #     print(edge.tag, "not in boundary solid", [e.tag for e in self._entity_ctx.select_many(boundary_solids)], [e.tag for e in self._entity_ctx.select_many(edge_solids)])
+            # except KeyError:
+            #     raise Exception("Structured boundary layer can only be applied after setTransfiniteEdge")
         else:
             assert num_layers is not None and hwall_n is not None and ratio is not None, "num_layers, hwall_n and ratio must be specified for unstructured boundary layer"
             boundary_layer = UnstructuredBoundaryLayer(self.vals(), ratio, hwall_n, num_layers)
