@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from plotly import graph_objects as go
 import cadquery as cq
 from cadquery.cq import CQObject, VectorLike
@@ -27,9 +27,24 @@ class DirectedPath:
         self.start = self.vertices[0]
         self.end = self.vertices[-1]
 
+    def __eq__(self, __value: object) -> bool:
+        return self.edge == __value
+
+    def __hash__(self) -> int:
+        return self.edge.__hash__()
+
+@dataclass
+class Group:
+    paths: list[DirectedPath] = field(default_factory=list)
+    "elements in group"
+
+    prev_group: Optional["Group"] = None
+    "previous group"
+
+    next_group: Optional["Group"] = None
+    "next group"
 
 
-        
 CQ_TYPE_STR_MAPPING: dict[type[CQObject], CQType] = {
     cq.Compound: "compound",
     cq.Solid: "solid",
@@ -39,6 +54,8 @@ CQ_TYPE_STR_MAPPING: dict[type[CQObject], CQType] = {
     cq.Edge: "edge",
     cq.Vertex: "vertex",
 }
+
+CQ_TYPE_RANKING = dict(zip(CQ_TYPE_STR_MAPPING.keys(), range(len(CQ_TYPE_STR_MAPPING)+1)[::-1]))
 
 class CQLinq:    
     @staticmethod
@@ -193,12 +210,18 @@ class CQLinq:
             prev_path = path
 
         # arrange groups based on angles
-        groups: list[list[DirectedPath]] = []
+        groups: list[Group] = []
         for i, angle in enumerate(angles[shuffle_num:] + angles[:shuffle_num]):
             path = sorted_paths[i+shuffle_num]
             if angle >= np.radians(angle_threshold):
-                groups.append([])
-            groups[-1].append(path)
+                prev_group = groups[-1] if len(groups) else None
+                group = Group(prev_group=prev_group)
+                groups.append(group)
+                if prev_group:
+                    prev_group.next_group = group
+            groups[-1].paths.append(path)
+        groups[0].prev_group = groups[-1]
+        groups[-1].next_group = groups[0]
         return groups
 
     @staticmethod
@@ -257,8 +280,8 @@ class CQExtensions:
 
 
     @staticmethod
-    def plot_workplane(
-        target: Union[cq.Workplane, CQObject, Sequence[CQObject], Sequence[Sequence[DirectedPath]], Sequence[Sequence[CQObject]]], 
+    def plot_cq(
+        target: Union[cq.Workplane, CQObject, Sequence[CQObject], Sequence[Group], Sequence[Sequence[CQObject]]], 
         edge_group_names: Optional[Sequence[str]] = None,
         title: str = "Plot", 
         samples_per_spline: int = 50,
@@ -268,24 +291,23 @@ class CQExtensions:
         )
 
         if isinstance(target, cq.Workplane):
-            edge_groups = [CQLinq.select(target, "edge")]
+            edge_groups = [[edge] for edge in CQLinq.select(target, "edge")]
         elif isinstance(target, CQObject):
-            edge_groups = [CQLinq.select(target, "edge")]
+            edge_groups = [[edge] for edge in CQLinq.select(target, "edge")]
         elif isinstance(target, Sequence) and isinstance(target[0], CQObject):
             edge_groups = [cast(Sequence[CQObject], target)]
+        elif isinstance(target, Sequence) and isinstance(target[0], Group):
+            edge_groups = [[path.edge for path in group.paths]for group in target]
+            edge_group_names = [f"Group{i}" for i in range(len(edge_groups))]
         else:
             target = cast(Sequence[Sequence], target)
-            if isinstance(target[0][0], DirectedPath):
-                edge_groups = [[path.edge for path in group] for group in target]
-            else:
-                edge_groups = cast(Sequence[Iterable[CQObject]], target)
+            edge_groups = cast(Sequence[Iterable[CQObject]], target)
 
         for i, edges in enumerate(edge_groups):
-            for edge in edges:
-                edge_name = edge_group_names[i] if edge_group_names else f"Edge{i}"
-                sampling = get_sampling(0, 1, samples_per_spline, False)
-                coords = np.array([vec.toTuple() for vec in edge.positions(sampling)], dtype=NumpyFloat) # type: ignore
-                add_plot(coords, fig, edge_name)
+            edge_name = edge_group_names[i] if edge_group_names else f"Edge{i}"
+            sampling = get_sampling(0, 1, samples_per_spline, False)
+            coords = np.concatenate([np.array([vec.toTuple() for vec in edge.positions(sampling)], dtype=NumpyFloat) for edge in edges]) # type: ignore
+            add_plot(coords, fig, edge_name)
 
         fig.layout.yaxis.scaleanchor = "x"  # type: ignore
         fig.show()
