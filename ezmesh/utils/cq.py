@@ -44,6 +44,13 @@ class Group:
     next_group: Optional["Group"] = None
     "next group"
 
+    @property
+    def start(self):
+        return self.paths[0].start
+
+    @property
+    def end(self):
+        return self.paths[-1].end
 
 CQ_TYPE_STR_MAPPING: dict[type[CQObject], CQType] = {
     cq.Compound: "compound",
@@ -135,7 +142,7 @@ class CQLinq:
     
 
     @staticmethod
-    def groupByTypes(target: Union[cq.Workplane, Sequence[CQObject]]): 
+    def groupByTypes(target: Union[cq.Workplane, Sequence[CQObject]], only_faces=False): 
         workplane = target if isinstance(target, cq.Workplane) else cq.Workplane().add(target)
         add_wire_to_group = lambda wires, group: group.update([
             *wires,
@@ -160,7 +167,8 @@ class CQLinq:
                 else:
                     face_registry = groups["interior" if is_interior else "exterior"]
                 face_registry.add(face)
-                add_wire_to_group(face.Wires(), face_registry)
+                if not only_faces:
+                    add_wire_to_group(face.Wires(), face_registry)
         else:
             first_face = cast(cq.Face, faces[0])
             add_wire_to_group(first_face.innerWires(), groups["interior"])

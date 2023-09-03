@@ -1,63 +1,93 @@
 import numpy as np
 import cadquery as cq
-from typing import Literal, Optional, Sequence, Union
-from ezmesh.utils.cq import CQExtensions
-from ezmesh.utils.types import EdgeTuple, VectorTuple
-
+from cadquery.cq import VectorLike
+from typing import Literal, Optional, Sequence, Union, cast
+from ezmesh.utils.cq import CQExtensions, CQLinq
+from ezmesh.utils.types import LineTuple, VectorTuple, Number
+from jupyter_cadquery.cadquery import show
 
 class Split:
     @staticmethod
     def from_plane(
         workplane: cq.Workplane,
-        base_pnt: VectorTuple = (0,0,0), 
-        angle: VectorTuple = (0,0,0), 
+        base_pnt: VectorLike = (0,0,0), 
+        dir: VectorTuple = (0,0,0), 
+
     ):
-        return cq.Face.makePlane(None, None, tuple(base_pnt), tuple(np.radians(angle)))
+        return cq.Face.makePlane(None, None, base_pnt, tuple(np.radians(dir)))
+
+    @staticmethod
+    def from_faces(workplane: cq.Workplane, face_type: Literal['interior', 'exterior']):
+        type_groups = CQLinq.groupByTypes(workplane, only_faces=True)
+        # edges = CQLinq.select(type_groups[face_type], "edge")
+        for face in type_groups[face_type]:
+            assert isinstance(face, cq.Face)
+            edges = CQLinq.select(face, "edge")
+
+            face_normal = face.normalAt()
+            edge_vec = cq.Vector()
+            for edge in edges:
+                edge_vertices = edge.Vertices()
+                edge_vec = cq.Vector(edge_vertices[-1].toTuple()) - cq.Vector(edge_vertices[0].toTuple())
+                if not face_normal.cross(edge_vec).Length < 0.5:
+                    edge_tuple = tuple([vertex.toTuple() for vertex in edge.Vertices()])
+                    yield Split.from_lines(workplane, edge_tuple, face.normalAt().toTuple(), "away")
 
     @staticmethod
     def from_anchor(
         workplane: cq.Workplane, 
         anchor: Union[list[VectorTuple], VectorTuple] = (0,0,0), 
-        angle: Union[list[VectorTuple], VectorTuple] = (0,0,0),
-        snap_tolerance: Optional[float] = None
+        dir: Union[list[VectorTuple], VectorTuple] = (0,0,0),
+        snap_tolerance: Optional[float] = None,
+        until: Literal["next", "all"] = "next"
     ):
         anchors = [anchor] if isinstance(anchor, tuple) else anchor
-        angles = [angle] if isinstance(angle, tuple) else angle
-        assert len(anchors) == len(angles), "anchors and angles must be the same length"
+        dirs = [dir] if isinstance(dir, tuple) else dir
+        assert len(anchors) == len(dirs), "anchors and dirs must be the same length"
 
         edges = []
-        for anchor, angle in zip(anchors, angles):
-            split_face = Split.from_plane(workplane, anchor, angle)
-            intersect_vertex = CQExtensions.split_intersect(workplane, anchor, split_face, snap_tolerance)
-            workplane.newObject
-            edges.append((anchor, intersect_vertex.toTuple())) # type: ignore
-        return Split.from_edges(workplane, edges)
+        for anchor, dir in zip(anchors, dirs):
+            split_face = Split.from_plane(workplane, anchor, dir)
+            if until == "next":
+                intersect_vertex = CQExtensions.split_intersect(workplane, anchor, split_face, snap_tolerance)
+                edges.append((anchor, intersect_vertex.toTuple())) # type: ignore
+            else:
+                edges.append(split_face)
+        return Split.from_lines(workplane, edges)
     
     @staticmethod
-    def from_pnts(workplane: cq.Workplane, pnts: Sequence[tuple[float, float, float]]):
+    def from_pnts(workplane: cq.Workplane, pnts: Sequence[cq.Vector]):
         return cq.Face.makeFromWires(cq.Wire.makePolygon(pnts))
 
     @staticmethod
-    def from_edges(
+    def from_edges(workplane: cq.Workplane, edges: Sequence[cq.Edge]):
+        wire = cq.Wire.assembleEdges(edges)
+        return cq.Face.makeFromWires(wire)
+
+    @staticmethod
+    def from_lines(
         workplane: cq.Workplane, 
-        edges: Union[list[EdgeTuple], EdgeTuple], 
-        dir: Literal["X", "Y", "Z"] = "Z"
+        lines: Union[list[LineTuple], LineTuple], 
+        axis: Union[Literal["X", "Y", "Z"], VectorTuple] = "Z",
+        dir: Literal["away", "towards", "both"] = "both"
     ):
-        edges_pnts = np.array([edges] if isinstance(edges, tuple) else edges)
+        edges_pnts = np.array([lines, lines] if isinstance(lines, tuple) else lines)
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
 
-
-        if len(edges_pnts) == 1:
-            top_pnts = edges_pnts[0]
-            bottom_pnts = np.array(top_pnts)
+        if isinstance(axis, str):
+            normal_vector = np.array([1 if axis == "X" else 0, 1 if axis == "Y" else 0, 1 if axis == "Z" else 0])        
         else:
-            top_pnts = edges_pnts[:,0]
-            bottom_pnts = edges_pnts[:,1]
+            normal_vector = np.array(axis)
 
-        top_pnts[:, {"X": 0, "Y": 1, "Z": 2}[dir]] = maxDim
-        bottom_pnts[:, {"X": 0, "Y": 1, "Z": 2}[dir]] = -maxDim
-
-        return Split.from_pnts(workplane, [*top_pnts.tolist(), *bottom_pnts[::-1].tolist()])
+        if dir in ("both", "towards"):
+            edges_pnts[0][0] += maxDim * normal_vector
+        if dir in ("both", "away"):        
+            edges_pnts[-1][-1] -= maxDim * normal_vector
+        
+        side1 = edges_pnts[:, 0].tolist()
+        side2 = edges_pnts[:, 1].tolist()
+        wire_pnts = [side1[0], *side2, *side1[1:][::-1]] 
+        return Split.from_pnts(workplane, wire_pnts)
 
 
 def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face]):

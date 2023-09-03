@@ -55,6 +55,10 @@ class TransactionContext:
             return self.entity_transactions.get((transaction_type, entity))
 
     def add_transaction(self, transaction: Transaction, ignore_duplicates: bool = False):
+        """
+        transaction: Transaction - transaction to be added
+        ignore_duplicates: bool = False - if True, will ignore duplicate entity transactions
+        """
         if isinstance(transaction, (SingleEntityTransaction, MultiEntityTransaction) ):
             entities = transaction.entities if isinstance(transaction, MultiEntityTransaction) else OrderedSet([transaction.entity])
             for entity in entities:
@@ -71,6 +75,10 @@ class TransactionContext:
             self.system_transactions[type(transaction)] = transaction
 
     def add_transactions(self, transactions: Sequence[Transaction], ignore_duplicates: bool = False):
+        """
+        transactions: Sequence[Transaction] - transactions to be added
+        ignore_duplicates: bool = False - if True, will ignore duplicate entity transactions
+        """
         for transaction in transactions:
             self.add_transaction(transaction, ignore_duplicates)
 

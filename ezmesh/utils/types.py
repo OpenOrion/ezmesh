@@ -4,7 +4,7 @@ import numpy as np
 NumpyFloat = np.float32
 Number = Union[int, float, NumpyFloat]
 VectorTuple = tuple[float, float, float]
-EdgeTuple = tuple[VectorTuple, VectorTuple]
+LineTuple = tuple[VectorTuple, VectorTuple]
 
 T = TypeVar("T")
 class OrderedSet(MutableSet[T]):

@@ -200,9 +200,16 @@ class GeometryQL:
         # self._ctx.add_transaction(transfinite_auto)
         self.is_structured = True
         edge_transactions = []
+
         for cq_solid in CQLinq.select(self._workplane, "solid"):
+            cq_solid_corners = set()
             for cq_face in cq_solid.Faces():
                 edges_groups = CQLinq.groupByAngles(cq_face.Edges(), group_angle)
+                for group in edges_groups:
+                    if group.start in self._type_groups["split"]:
+                        cq_solid_corners.add(group.start)
+                    if group.end in self._type_groups["split"]:
+                        cq_solid_corners.add(group.end)
                 cq_face_corners = [group.paths[0].start for group in edges_groups]
                 if len(edges_groups) != 4:
                     CQExtensions.plot_cq(edges_groups)
@@ -222,9 +229,10 @@ class GeometryQL:
                         set_transfinite_edge = SetTransfiniteEdge(edge, edge_num_nodes[j], "Progression", 1.0)
                         edge_transactions.append(set_transfinite_edge)
 
-            # solid_corners = self._entity_ctx.select_many(cq_solid_corners)
-            # assert len(solid_corners) <= 8, "Solid must have <=8 corners"
+            solid_corners = self._entity_ctx.select_many(cq_solid_corners)
+            assert len(solid_corners) <= 8, "Solid must have <=8 corners"
 
+            print(len(solid_corners))
             solid = self._entity_ctx.select(cq_solid)
             set_transfinite_solid = SetTransfiniteSolid(solid)
             self._ctx.add_transaction(set_transfinite_solid)
@@ -234,10 +242,6 @@ class GeometryQL:
         return self
 
     def _addStructuredBoundaryLayer(self, cq_objs: Sequence[CQObject], ratio: float = 1, hwall_n: Optional[float] = None, num_layers: Optional[int] = None, same_face: bool = True):
-        # sort edges into edge groups based on angle
-        # at the end of edge groups find the boundary edges
-        # if the boundary edges are not in the same solid then that is the edge of interest
-        # other non solids boundary edge addBoundaryLayer is applied to them to if specified
         assert self.is_structured, "Structured boundary layer can only be applied after setTransfiniteAuto"
         diff_face_edges = set()
         if CQ_TYPE_RANKING[type(cq_objs[0])] < CQ_TYPE_RANKING[cq.Face]:
@@ -245,18 +249,11 @@ class GeometryQL:
 
         boundary_vertices =  list(CQLinq.select(cq_objs, "vertex"))
         boundary_solids = set([solid for edge in CQLinq.select(cq_objs, "face") for solid in self._solid_face_groups[edge]])
-        print([self._entity_ctx.select(s).tag for s in boundary_solids])
-        # try:
+
         for (cq_edge, edge) in self._entity_ctx.entity_registries["edge"].items():
             transaction = cast(SetTransfiniteEdge, self._ctx.get_transaction(SetTransfiniteEdge, edge))
             assert edge.type == "edge", "StructuredBoundaryLayer only accepts edges"
-            if num_layers is None:
-                assert hwall_n is not None, "hwall_n must be specified if num_layers is not specified"
-                edge_length = cq_edge.Length() # type: ignore
-                num_elems = np.log((hwall_n + edge_length*ratio - edge_length)/hwall_n)/np.log(ratio)
-            else:
-                num_elems = num_layers
-            
+            num_elems = get_boundary_num_layers(cq_edge.Length(), ratio, hwall_n, num_layers)
             edge_solids = self._solid_edge_groups[cq_edge]
 
             cq_curr_edge_vertices =  cq_edge.Vertices()
@@ -279,16 +276,12 @@ class GeometryQL:
 
     def addBoundaryLayer(self, ratio: float = 1, hwall_n: Optional[float] = None, num_layers: Optional[int] = None, same_face: bool = True):
         if self.is_structured:
-                self._addStructuredBoundaryLayer(self._workplane.vals(), ratio, hwall_n, num_layers, same_face)
-                        
-                # except KeyError:
-            #     raise Exception("Structured boundary layer can only be applied after setTransfiniteEdge")
+            self._addStructuredBoundaryLayer(self._workplane.vals(), ratio, hwall_n, num_layers, same_face)
         else:
             assert num_layers is not None and hwall_n is not None and ratio is not None, "num_layers, hwall_n and ratio must be specified for unstructured boundary layer"
             boundary_layer = UnstructuredBoundaryLayer(self.vals(), ratio, hwall_n, num_layers)
             self._ctx.add_transaction(boundary_layer)
         return self
-
 
     def generate(self, dim: int = 3):
         self._ctx.commit(dim)
