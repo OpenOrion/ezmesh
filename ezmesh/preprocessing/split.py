@@ -6,6 +6,14 @@ from ezmesh.utils.cq import CQExtensions, CQLinq
 from ezmesh.utils.types import LineTuple, VectorTuple, Number
 from jupyter_cadquery.cadquery import show
 
+
+Axis = Union[Literal["X", "Y", "Z"], VectorTuple]
+def get_normal_from_axis(axis: Axis):
+    if isinstance(axis, str):
+        return np.array([1 if axis == "X" else 0, 1 if axis == "Y" else 0, 1 if axis == "Z" else 0])        
+    else:
+        return np.array(axis)
+
 class Split:
     @staticmethod
     def from_plane(
@@ -31,7 +39,7 @@ class Split:
                 edge_vec = cq.Vector(edge_vertices[-1].toTuple()) - cq.Vector(edge_vertices[0].toTuple())
                 if not face_normal.cross(edge_vec).Length < 0.5:
                     edge_tuple = tuple([vertex.toTuple() for vertex in edge.Vertices()])
-                    yield Split.from_lines(workplane, edge_tuple, face.normalAt().toTuple(), "away")
+                    yield Split.from_lines(workplane, edge_tuple, face.normalAt(edge.Center()).toTuple(), "away")
 
     @staticmethod
     def from_anchor(
@@ -69,21 +77,26 @@ class Split:
         workplane: cq.Workplane, 
         lines: Union[list[LineTuple], LineTuple], 
         axis: Union[Literal["X", "Y", "Z"], VectorTuple] = "Z",
-        dir: Literal["away", "towards", "both"] = "both"
+        dir: Literal["away", "towards", "both"] = "both",
+        maxDimAxis: Optional[Union[Literal["X", "Y", "Z"], VectorTuple]] = "Z",
     ):
         edges_pnts = np.array([lines, lines] if isinstance(lines, tuple) else lines)
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
-
-        if isinstance(axis, str):
-            normal_vector = np.array([1 if axis == "X" else 0, 1 if axis == "Y" else 0, 1 if axis == "Z" else 0])        
-        else:
-            normal_vector = np.array(axis)
+        normal_vector = get_normal_from_axis(axis)
 
         if dir in ("both", "towards"):
-            edges_pnts[0][0] += maxDim * normal_vector
+            edges_pnts[0] += maxDim * normal_vector
         if dir in ("both", "away"):        
-            edges_pnts[-1][-1] -= maxDim * normal_vector
-        
+            edges_pnts[-1] -= maxDim * normal_vector
+
+        if maxDimAxis and maxDimAxis != axis:
+            max_dim_normal = get_normal_from_axis(maxDimAxis)
+            edges_pnts[0][0] += maxDim * max_dim_normal
+            edges_pnts[-1][0] += maxDim * max_dim_normal
+
+            edges_pnts[0][-1] -= maxDim * max_dim_normal
+            edges_pnts[-1][-1] -= maxDim * max_dim_normal
+
         side1 = edges_pnts[:, 0].tolist()
         side2 = edges_pnts[:, 1].tolist()
         wire_pnts = [side1[0], *side2, *side1[1:][::-1]] 
