@@ -27,17 +27,16 @@ def get_normal_from_axis(axis: Axis):
 class Split:
     @staticmethod
     def from_plane(
-        workplane: cq.Workplane,
         base_pnt: VectorLike = (0,0,0), 
-        dir: VectorTuple = (0,0,0), 
-
+        angle: VectorTuple = (0,0,0), 
     ):
-        return cq.Face.makePlane(None, None, base_pnt, tuple(np.radians(dir)))
+        return cq.Face.makePlane(None, None, base_pnt, tuple(np.radians(angle)))
 
     @staticmethod
     def from_faces(
         workplane: cq.Workplane, 
         face_type: Literal['interior', 'exterior'],
+        snap_tolerance: Optional[float] = None,
     ):
         type_groups = CQLinq.groupByTypes(workplane, only_faces=True)
         dir = "away" if face_type == "interior" else "towards"
@@ -47,23 +46,16 @@ class Split:
             assert isinstance(face, cq.Face)
             edges = CQLinq.select(face, "edge")
             for edge in edges:
-                # face_normal = face.normalAt(edge.Center())
-                # edge_vec = cq.Vector(edge.endPoint().toTuple()) - cq.Vector(edge.startPoint().toTuple())
-                # is_parallel = edge_vec.dot(face_normal) == 0
-                # if is_parallel:
-                #     yield Split.from_edge(workplane, edge, face_normal, dir)
-
                 if edge not in face_edge_groups:
                     face_edge_groups[edge] = set()
                 face_edge_groups[edge].add(face)
 
         for edge, faces in face_edge_groups.items():
             average_normal = cq.Vector(tuple(np.average([face.normalAt().toTuple() for face in faces], axis=0)))
-            # print(np.average([face.normalAt().toTuple() for face in faces], axis=0))
             edge_vec = cq.Vector(edge.endPoint().toTuple()) - cq.Vector(edge.startPoint().toTuple())
             is_parallel = edge_vec.dot(average_normal) == 0
             if is_parallel:
-                yield Split.from_edge(workplane, edge, average_normal, dir)
+                yield Split.from_edge(workplane, edge, average_normal, dir, snap_tolerance)
 
 
 
@@ -99,6 +91,7 @@ class Split:
         edge: cq.Edge, 
         axis: Union[Literal["X", "Y", "Z"], VectorTuple, cq.Vector] = "Z",
         dir: Literal["away", "towards", "both"] = "both",
+        snap_tolerance: Optional[float] = None
     ):
         scaled_edge: cq.Edge = scale(edge, z=10)
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
@@ -107,12 +100,19 @@ class Split:
         max_dim_edge = scaled_edge.translate(normal_vector * maxDim) if dir in ("both", "towards") else scaled_edge
         min_dim_edge = scaled_edge.translate(-normal_vector * maxDim) if dir in ("both", "away") else scaled_edge
         
-        cutting_face = cq.Face.makeFromWires(cq.Wire.assembleEdges([
+        split_face = cq.Face.makeFromWires(cq.Wire.assembleEdges([
             min_dim_edge,
             cq.Edge.makeLine(min_dim_edge.endPoint(), max_dim_edge.endPoint()),
             max_dim_edge,
             cq.Edge.makeLine(max_dim_edge.startPoint(), min_dim_edge.startPoint()),
         ]))
+
+        if snap_tolerance:
+            intersect_vertex = CQExtensions.split_intersect(workplane, edge.startPoint(), split_face, snap_tolerance)
+            intersect_vec = cq.Vector(intersect_vertex.toTuple()) - cq.Vector(edge.startPoint().toTuple())
+            intersect_vec_norm = intersect_vec/intersect_vec.Length
+            # print(intersect_vec_norm.toTuple(), edge.startPoint().toTuple())
+            return Split.from_edge(workplane, edge, intersect_vec_norm, "towards")
         # show(workplane.newObject([min_dim_edge, max_dim_edge]))
         # print(min_dim_edge.startPoint().toTuple())
         # print(min_dim_edge.endPoint().toTuple())
@@ -120,7 +120,7 @@ class Split:
         # print(max_dim_edge.endPoint().toTuple())
         # print(min_dim_edge.startPoint().toTuple())
 
-        return cutting_face
+        return split_face
 
     @staticmethod
     def from_lines(
@@ -132,7 +132,7 @@ class Split:
         
         edges_pnts = np.array([lines, lines] if isinstance(lines, tuple) else lines)
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
-        normal_vector = get_normal_from_axis(axis)
+        normal_vector = np.array(get_normal_from_axis(axis).toTuple())
 
         if dir in ("both", "towards"):
             edges_pnts[0] += maxDim * normal_vector

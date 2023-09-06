@@ -8,10 +8,10 @@ from ezmesh.entity import CQEntityContext
 from ezmesh.preprocessing.split import split_workplane
 from ezmesh.transaction import TransactionContext
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm2D
-from ezmesh.transactions.boundary_layer import UnstructuredBoundaryLayer
+from ezmesh.transactions.boundary_layer import UnstructuredBoundaryLayer, UnstructuredBoundaryLayer2D, get_boundary_num_layers
 from ezmesh.transactions.physical_group import SetPhysicalGroup
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
-from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType, get_boundary_num_layers, get_num_nodes_for_ratios
+from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType, get_num_nodes_for_ratios
 from ezmesh.mesh.exporters import export_to_su2
 from ezmesh.utils.cq import CQ_TYPE_RANKING, CQ_TYPE_STR_MAPPING, CQExtensions, CQGroupTypeString, CQLinq, CQType, Group
 from ezmesh.utils.types import OrderedSet
@@ -73,33 +73,33 @@ class GeometryQL:
                 tag = f"{cq_type}/{registry[occ_obj].tag}"
                 self._workplane.newObject([occ_obj]).tag(tag)
 
-    def solids(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, groupType: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = groupType and self._type_groups[groupType]
-        selector = CQExtensions.get_selector(selector, group, indices)
+    def solids(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, type: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
+        obj_type = type and self._type_groups[type]
+        selector = CQExtensions.get_selector(selector, obj_type, indices)
         self._workplane = self._workplane.solids(selector, tag)
         return self
 
     def faces(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, type: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = type and self._type_groups[type]
-        selector = CQExtensions.get_selector(selector, group, indices)
+        obj_type = type and self._type_groups[type]
+        selector = CQExtensions.get_selector(selector, obj_type, indices)
         self._workplane = self._workplane.faces(selector, tag)
         return self
     
-    def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, groupType: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = groupType and self._type_groups[groupType]
-        selector = CQExtensions.get_selector(selector, group, indices)
+    def edges(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, type: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
+        obj_type = type and self._type_groups[type]
+        selector = CQExtensions.get_selector(selector, obj_type, indices)
         self._workplane = self._workplane.edges(selector, tag)
         return self
 
-    def wires(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, groupType: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = groupType and self._type_groups[groupType]
-        selector = CQExtensions.get_selector(selector, group, indices)
+    def wires(self, selector: Union[Selector, str, None] = None, tag: Union[str, None] = None, type: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
+        obj_type = type and self._type_groups[type]
+        selector = CQExtensions.get_selector(selector, obj_type, indices)
         self._workplane = self._workplane.wires(selector, tag)
         return self
 
-    def vertices(self, selector: Selector | str | None = None, tag: str | None = None, groupType: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
-        group = groupType and self._type_groups[groupType]
-        selector = CQExtensions.get_selector(selector, group, indices)
+    def vertices(self, selector: Selector | str | None = None, tag: str | None = None, type: Optional[CQGroupTypeString] = None, indices: Optional[Sequence[int]] = None):
+        obj_type = type and self._type_groups[type]
+        selector = CQExtensions.get_selector(selector, obj_type, indices)
         self._workplane = self._workplane.vertices(selector, tag)
         return self
 
@@ -130,7 +130,7 @@ class GeometryQL:
         return self
 
     def addPhysicalGroup(self, names: Union[str, Sequence[str]], tagWorkspace: bool = True):
-        for name in (names if isinstance(names, str) else names):
+        for name in ([names] if isinstance(names, str) else names):
             set_physical_group = SetPhysicalGroup(self.vals(), name)
             self._ctx.add_transaction(set_physical_group)
         if tagWorkspace:
@@ -195,7 +195,7 @@ class GeometryQL:
         self._ctx.add_transactions(set_transfinite_solids)
         return self
 
-    def setTransfiniteAuto(self, num_nodes: int = 50, group_angle: float = 45):
+    def setTransfiniteAuto(self, num_nodes: int, group_angle: float = 0):
         # transfinite_auto = SetTransfiniteAuto()
         # self._ctx.add_transaction(transfinite_auto)
         self.is_structured = True
@@ -213,7 +213,7 @@ class GeometryQL:
                 cq_face_corners = [group.paths[0].start for group in edges_groups]
                 if len(edges_groups) != 4:
                     CQExtensions.plot_cq(edges_groups)
-                assert len(edges_groups) == 4, "Face must have 4 corners"
+                assert len(edges_groups) in [3,4], "Face must have 3 or 4 corners"
                 face = self._entity_ctx.select(cq_face)
                 corners = self._entity_ctx.select_many(cq_face_corners)
                 set_transfinite_face = SetTransfiniteFace(face, corners=corners)
@@ -222,6 +222,7 @@ class GeometryQL:
                 for i, group in enumerate(edges_groups):
                     group_length = np.sum([path.edge.Length() for path in group.paths]) # type: ignore
                     ratios = [path.edge.Length()/group_length for path in group.paths] # type: ignore
+
                     edge_num_nodes = get_num_nodes_for_ratios(num_nodes, ratios)
                     for j, path in enumerate(group.paths):
                         assert edge_num_nodes[j] != 0, "edge nodes of 0 detected, raise the num_nodes"
@@ -232,7 +233,6 @@ class GeometryQL:
             solid_corners = self._entity_ctx.select_many(cq_solid_corners)
             assert len(solid_corners) <= 8, "Solid must have <=8 corners"
 
-            print(len(solid_corners))
             solid = self._entity_ctx.select(cq_solid)
             set_transfinite_solid = SetTransfiniteSolid(solid)
             self._ctx.add_transaction(set_transfinite_solid)
@@ -241,11 +241,16 @@ class GeometryQL:
 
         return self
 
-    def _addStructuredBoundaryLayer(self, cq_objs: Sequence[CQObject], ratio: float = 1, hwall_n: Optional[float] = None, num_layers: Optional[int] = None, same_face: bool = True):
+    def _addStructuredBoundaryLayer(
+            self, 
+            cq_objs: Sequence[CQObject], 
+            ratio: float = 1, 
+            size: Optional[float] = None, 
+            num_layers: Optional[int] = None, 
+        ):
         assert self.is_structured, "Structured boundary layer can only be applied after setTransfiniteAuto"
         diff_face_edges = set()
-        if CQ_TYPE_RANKING[type(cq_objs[0])] < CQ_TYPE_RANKING[cq.Face]:
-            same_face = False
+        is_edge = CQ_TYPE_RANKING[type(cq_objs[0])] >= CQ_TYPE_RANKING[cq.Face]
 
         boundary_vertices =  list(CQLinq.select(cq_objs, "vertex"))
         boundary_solids = set([solid for edge in CQLinq.select(cq_objs, "face") for solid in self._solid_face_groups[edge]])
@@ -253,33 +258,36 @@ class GeometryQL:
         for (cq_edge, edge) in self._entity_ctx.entity_registries["edge"].items():
             transaction = cast(SetTransfiniteEdge, self._ctx.get_transaction(SetTransfiniteEdge, edge))
             assert edge.type == "edge", "StructuredBoundaryLayer only accepts edges"
-            num_elems = get_boundary_num_layers(cq_edge.Length(), ratio, hwall_n, num_layers)
+            num_elems = get_boundary_num_layers(cq_edge.Length(), ratio, size, num_layers) # type: ignore
             edge_solids = self._solid_edge_groups[cq_edge]
 
-            cq_curr_edge_vertices =  cq_edge.Vertices()
+            cq_curr_edge_vertices =  cq_edge.Vertices() # type: ignore
             if cq_curr_edge_vertices[0] in boundary_vertices and cq_curr_edge_vertices[-1] not in boundary_vertices:
-                if not same_face or (boundary_solids & edge_solids):
+                if is_edge or (boundary_solids & edge_solids):
                     transaction.num_elems = num_elems
                     transaction.coef = ratio
                 else:
                     diff_face_edges.add(cq_edge)
 
             elif cq_curr_edge_vertices[-1] in boundary_vertices and cq_curr_edge_vertices[0] not in boundary_vertices:
-                if not same_face or (boundary_solids & edge_solids):
+                if is_edge or (boundary_solids & edge_solids):
                     transaction.num_elems = num_elems
                     transaction.coef = -ratio
                 else:
                     diff_face_edges.add(cq_edge)
         
         if len(diff_face_edges):
-            self._addStructuredBoundaryLayer(list(diff_face_edges), ratio, hwall_n, num_layers, same_face)
+            self._addStructuredBoundaryLayer(list(diff_face_edges), ratio, size, num_layers)
 
-    def addBoundaryLayer(self, ratio: float = 1, hwall_n: Optional[float] = None, num_layers: Optional[int] = None, same_face: bool = True):
+    def addBoundaryLayer(self, ratio: float = 1, size: Optional[float] = None, num_layers: Optional[int] = None):
         if self.is_structured:
-            self._addStructuredBoundaryLayer(self._workplane.vals(), ratio, hwall_n, num_layers, same_face)
+            self._addStructuredBoundaryLayer(self._workplane.vals(), ratio, size, num_layers)
         else:
-            assert num_layers is not None and hwall_n is not None and ratio is not None, "num_layers, hwall_n and ratio must be specified for unstructured boundary layer"
-            boundary_layer = UnstructuredBoundaryLayer(self.vals(), ratio, hwall_n, num_layers)
+            assert num_layers is not None and size is not None and ratio is not None, "num_layers, hwall_n and ratio must be specified for unstructured boundary layer"
+            if CQ_TYPE_RANKING[type(self._workplane.val())] < CQ_TYPE_RANKING[cq.Face]:
+                boundary_layer = UnstructuredBoundaryLayer2D(self.vals(), ratio, size, num_layers)
+            else:
+                boundary_layer = UnstructuredBoundaryLayer(self.vals(), ratio, size, num_layers)
             self._ctx.add_transaction(boundary_layer)
         return self
 

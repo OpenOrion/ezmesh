@@ -156,7 +156,7 @@ class CQLinq:
             "exterior": OrderedSet[CQObject](),
         }
         faces = list(CQLinq.select(target, "face"))
-        if len(faces) > 0:
+        if len(faces) > 1:
             for face in faces:
                 assert isinstance(face, cq.Face), "object must be a face"
                 split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5)))

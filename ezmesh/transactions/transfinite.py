@@ -35,13 +35,6 @@ def get_num_nodes_for_ratios(total_num_nodes: int, ratios: Sequence[float]):
 
     return allocated_nodes
 
-def get_boundary_num_layers(length: float, ratio: float, hwall_n: Optional[float] = None, num_layers: Optional[int] = None):
-    if num_layers is None:
-        assert hwall_n is not None, "hwall_n must be specified if num_layers is not specified"
-        return np.log((hwall_n + length*ratio - length)/hwall_n)/np.log(ratio)
-    else:
-        return num_layers
-
 
 @dataclass(eq=False)
 class SetTransfiniteEdge(SingleEntityTransaction):

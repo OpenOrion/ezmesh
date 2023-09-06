@@ -2,10 +2,23 @@ import gmsh
 from dataclasses import dataclass
 from typing import Optional
 import numpy as np
-from ezmesh.entity import Entity
+from ezmesh.entity import ENTITY_DIM_MAPPING, Entity
 from ezmesh.transaction import MultiEntityTransaction
 from ezmesh.utils.types import OrderedSet
 
+def get_boundary_sizes(ratio: float, size: float, num_layers: int):
+    sizes = [size]
+    for i in range(1, num_layers): 
+        # geometric series for boundary layer heights
+        sizes.append(sizes[-1] + sizes[0] * ratio**i)
+    return sizes
+
+def get_boundary_num_layers(length: float, ratio: float, normal_height: Optional[float] = None, num_layers: Optional[int] = None):
+    if num_layers is None:
+        assert normal_height is not None, "hwall_n must be specified if num_layers is not specified"
+        return np.log((normal_height + length*ratio - length)/normal_height)/np.log(ratio)
+    else:
+        return num_layers
 
 
 @dataclass(eq=False)
@@ -18,20 +31,21 @@ class UnstructuredBoundaryLayer(MultiEntityTransaction):
     ratio: float
     "size Ratio Between Two Successive Layers"
 
-    hwall_n: float
+    size: float
     "mesh size normal to the the wall"
 
     num_layers: int
     "number of layers"
 
     def before_gen(self):
-        heights = [self.hwall_n]
-        for i in range(1, self.num_layers): 
-            # geometric series for boundary layer heights
-            heights.append(heights[-1] + heights[0] * self.ratio**i)
+        sizes = get_boundary_sizes(self.ratio, self.size, self.num_layers)
         
-        dimTags = [(entity.dim, entity.tag) for entity in self.entities]
-        extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dimTags, [1] * self.num_layers, heights, True)
+        dim_tags = []
+        for face in self.entities:
+            assert face.dim == ENTITY_DIM_MAPPING["face"], "boundary layer can only be applied to faces"
+            dim_tags.append((face.dim, face.tag))
+
+        extruded_bnd_layer = gmsh.model.geo.extrudeBoundaryLayer(dim_tags, [1] * self.num_layers, sizes, True)
 
         top = []
         for i in range(1, len(extruded_bnd_layer)):
@@ -50,44 +64,28 @@ class UnstructuredBoundaryLayer2D(MultiEntityTransaction):
     entities: OrderedSet[Entity]
     "edges to be added to the boundary layer"
 
-    ratio: Optional[float] = None
+    ratio: float
     "size Ratio Between Two Successive Layers"
 
-    hwall_n: Optional[float] = None
-    "mesh size Normal to the The Wal"
+    size: float
+    "mesh size Normal to the wall"
 
-    hfar: Optional[float] = None
-    "element size far from the wall"
-
-    aniso_max: Optional[float] = None
-    "threshold angle for creating a mesh fan in the boundary layer"
-
-    thickness: Optional[float] = None
-    "maximal thickness of the boundary layer"
-
-    intersect_metrics: bool = False
-    "intersect metrics of all faces"
-
-    is_quad_mesh: bool = False
-    "generate recombined elements in the boundary layer"
+    num_layers: int
+    "number of layers"
 
     def before_gen(self):
-        self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
-        edge_tags = [edge.tag for edge in self.entities]
-        gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', edge_tags)
-        if self.aniso_max:
-            gmsh.model.mesh.field.setNumber(self.tag, "AnisoMax", self.aniso_max)
-        if self.intersect_metrics:
-            gmsh.model.mesh.field.setNumber(self.tag, "IntersectMetrics", self.intersect_metrics)
-        if self.is_quad_mesh:
-            gmsh.model.mesh.field.setNumber(self.tag, "Quads", int(self.is_quad_mesh))
-        if self.hfar:
-            gmsh.model.mesh.field.setNumber(self.tag, "hfar", self.hfar)
-        if self.hwall_n:
-            gmsh.model.mesh.field.setNumber(self.tag, "hwall_n", self.hwall_n)
-        if self.ratio:
-            gmsh.model.mesh.field.setNumber(self.tag, "ratio", self.ratio)
-        if self.thickness:
-            gmsh.model.mesh.field.setNumber(self.tag, "thickness", self.thickness)
+        edge_tags = []
+        for edge in self.entities:
+            assert edge.dim == ENTITY_DIM_MAPPING["edge"], "boundary layer can only be applied to edges"
+            edge_tags.append(edge.tag)
+        sizes = get_boundary_sizes(self.ratio, self.size, self.num_layers)
 
+
+        self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
+        # gmsh.model.mesh.field.setNumber(self.tag, "Size", sizes[0])
+        # gmsh.model.mesh.field.setNumber(self.tag, "SizeFar", sizes[-1])
+        # gmsh.model.mesh.field.setNumber(self.tag, "Thickness", sizes[-1])
+        # gmsh.model.mesh.field.setNumbers(self.tag, "SizesList", sizes)
+        gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', edge_tags)
+        gmsh.model.mesh.field.setNumber(self.tag, "Quads", 1)
         gmsh.model.mesh.field.setAsBoundaryLayer(self.tag)
