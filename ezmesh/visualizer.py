@@ -41,7 +41,12 @@ def to_rgb_str(color: Sequence[int]):
     return f"rgb({int(color[0]*255)},{int(color[1]*255)},{int(color[2]*255)})"
 
 
-def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=600):
+def visualize_mesh(
+    meshes: Union[Mesh, list[Mesh]], 
+    view_width=800, 
+    view_height=600,
+    only_markers=False
+):
     coord_html = widgets.HTML("Coords: ()")
 
     def on_surf_mousemove(change):
@@ -116,7 +121,7 @@ def visualize_mesh(meshes: Union[Mesh, list[Mesh]], view_width=800, view_height=
                 else:
                     non_marker_line_points.append(line_points)
 
-        if len(non_marker_line_points) > 0:
+        if not only_markers and len(non_marker_line_points) > 0:
             non_marker_lines = pythreejs.LineSegments2(
                 cast(Any, pythreejs.LineSegmentsGeometry(positions=non_marker_line_points)),
                 cast(Any, pythreejs.LineMaterial(linewidth=1, color=to_rgb_str(mesh_color)))

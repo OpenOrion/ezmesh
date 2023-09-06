@@ -290,12 +290,12 @@ class GeometryQL:
             gmsh.write(filename)
         return self
 
-    def show(self, type: Literal["fltk", "mesh", "cq", "plot"] = "cq"):
+    def show(self, type: Literal["fltk", "mesh", "cq", "plot"] = "cq", only_markers: bool = False):
         if type == "fltk":
             gmsh.fltk.run()
         elif type == "mesh":
             assert self._ctx.mesh is not None, "Mesh is not generated yet."
-            visualize_mesh(self._ctx.mesh)
+            visualize_mesh(self._ctx.mesh, only_markers=only_markers)
         elif type == "plot":
             edge_names = [f"Edge{edge.tag}" for edge in self._entity_ctx.select_many(self._workplane, "edge")]
             CQExtensions.plot_cq(self._workplane, edge_names)

@@ -78,14 +78,12 @@ class UnstructuredBoundaryLayer2D(MultiEntityTransaction):
         for edge in self.entities:
             assert edge.dim == ENTITY_DIM_MAPPING["edge"], "boundary layer can only be applied to edges"
             edge_tags.append(edge.tag)
-        sizes = get_boundary_sizes(self.ratio, self.size, self.num_layers)
-
 
         self.tag = gmsh.model.mesh.field.add('BoundaryLayer')
-        # gmsh.model.mesh.field.setNumber(self.tag, "Size", sizes[0])
-        # gmsh.model.mesh.field.setNumber(self.tag, "SizeFar", sizes[-1])
-        # gmsh.model.mesh.field.setNumber(self.tag, "Thickness", sizes[-1])
-        # gmsh.model.mesh.field.setNumbers(self.tag, "SizesList", sizes)
+        gmsh.model.mesh.field.setAsBoundaryLayer(self.tag)
+
         gmsh.model.mesh.field.setNumbers(self.tag, 'CurvesList', edge_tags)
         gmsh.model.mesh.field.setNumber(self.tag, "Quads", 1)
-        gmsh.model.mesh.field.setAsBoundaryLayer(self.tag)
+        gmsh.model.mesh.field.setNumber(self.tag, "Size", self.size)
+        gmsh.model.mesh.field.setNumber(self.tag, "NbLayers", self.num_layers)
+        gmsh.model.mesh.field.setNumber(self.tag, "BetaLaw", 1)
