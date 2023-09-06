@@ -7,15 +7,6 @@ from ezmesh.utils.types import LineTuple, VectorTuple, Number
 from jupyter_cadquery.cadquery import show
 
 
-def scale(obj: CQObject, x: float = 1, y: float = 1, z: float = 1):
-    t = cq.Matrix([
-        [x, 0, 0, 0],
-        [0, y, 0, 0],
-        [0, 0, z, 0],
-        [0, 0, 0, 1]
-    ])
-    return obj.transformGeometry(t)
-
 Axis = Union[Literal["X", "Y", "Z"], VectorTuple, cq.Vector]
 def get_normal_from_axis(axis: Axis):
     if isinstance(axis, str):
@@ -46,6 +37,7 @@ class Split:
             assert isinstance(face, cq.Face)
             edges = CQLinq.select(face, "edge")
             for edge in edges:
+                assert isinstance(edge, cq.Edge)
                 if edge not in face_edge_groups:
                     face_edge_groups[edge] = set()
                 face_edge_groups[edge].add(face)
@@ -73,7 +65,7 @@ class Split:
 
         edges = []
         for anchor, dir in zip(anchors, dirs):
-            split_face = Split.from_plane(workplane, anchor, dir)
+            split_face = Split.from_plane(anchor, dir)
             if until == "next":
                 intersect_vertex = CQExtensions.split_intersect(workplane, anchor, split_face, snap_tolerance)
                 edges.append((anchor, intersect_vertex.toTuple())) # type: ignore
@@ -93,12 +85,13 @@ class Split:
         dir: Literal["away", "towards", "both"] = "both",
         snap_tolerance: Optional[float] = None
     ):
-        scaled_edge: cq.Edge = scale(edge, z=10)
+        scaled_edge = CQExtensions.scale(edge, z=10)
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
         normal_vector = get_normal_from_axis(axis)        
 
         max_dim_edge = scaled_edge.translate(normal_vector * maxDim) if dir in ("both", "towards") else scaled_edge
         min_dim_edge = scaled_edge.translate(-normal_vector * maxDim) if dir in ("both", "away") else scaled_edge
+
         
         split_face = cq.Face.makeFromWires(cq.Wire.assembleEdges([
             min_dim_edge,
@@ -109,16 +102,10 @@ class Split:
 
         if snap_tolerance:
             intersect_vertex = CQExtensions.split_intersect(workplane, edge.startPoint(), split_face, snap_tolerance)
+            assert intersect_vertex, "No intersection found"
             intersect_vec = cq.Vector(intersect_vertex.toTuple()) - cq.Vector(edge.startPoint().toTuple())
             intersect_vec_norm = intersect_vec/intersect_vec.Length
-            # print(intersect_vec_norm.toTuple(), edge.startPoint().toTuple())
             return Split.from_edge(workplane, edge, intersect_vec_norm, "towards")
-        # show(workplane.newObject([min_dim_edge, max_dim_edge]))
-        # print(min_dim_edge.startPoint().toTuple())
-        # print(min_dim_edge.endPoint().toTuple())
-        # print(max_dim_edge.startPoint().toTuple())
-        # print(max_dim_edge.endPoint().toTuple())
-        # print(min_dim_edge.startPoint().toTuple())
 
         return split_face
 
@@ -148,31 +135,4 @@ def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face]):
     for split in splits:      
         workplane = workplane.split(split)
     return workplane
-
-
-# from OCP.BRepAlgoAPI import BRepAlgoAPI_Splitter
-# from OCP.TopTools import TopTools_ListOfShape
-
-# def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face]):
-#     shape_list = TopTools_ListOfShape()
-#     for shape in workplane.vals():
-#         shape_list.Append(shape.wrapped)
-
-
-#     # Define the splitting plane
-#     tool_list = TopTools_ListOfShape()
-#     for split_tool in splits:
-#         tool_list.Append(split_tool.wrapped)
-
-#     # Create the splitter algorithm
-#     splitter = BRepAlgoAPI_Splitter()
-
-#     # Set the shape to be split and the splitting tool (plane face)
-#     splitter.SetArguments(shape_list)
-#     splitter.SetTools(tool_list)
-
-#     # Perform the splitting operation
-#     splitter.Build()
-    
-#     compound = cq.Compound(cq.Compound._makeCompound([splitter.Shape()]))
-#     return workplane.newObject([compound])
+    return cq.Workplane(compound)

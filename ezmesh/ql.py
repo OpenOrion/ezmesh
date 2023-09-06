@@ -53,8 +53,6 @@ class GeometryQL:
         self._workplane = self._initial_workplane = workplane
         self._entity_ctx = CQEntityContext(self._workplane)
         self._type_groups = CQLinq.groupByTypes(self._workplane)
-        self._solid_edge_groups = CQLinq.groupBy(self._workplane, "solid", "edge")
-        self._solid_face_groups = CQLinq.groupBy(self._workplane, "solid", "face")
 
         topods = self._workplane.toOCC()
 
@@ -211,7 +209,7 @@ class GeometryQL:
                     if group.end in self._type_groups["split"]:
                         cq_solid_corners.add(group.end)
                 cq_face_corners = [group.paths[0].start for group in edges_groups]
-                if len(edges_groups) != 4:
+                if len(edges_groups) not in [3,4]:
                     CQExtensions.plot_cq(edges_groups)
                 assert len(edges_groups) in [3,4], "Face must have 3 or 4 corners"
                 face = self._entity_ctx.select(cq_face)
@@ -249,35 +247,22 @@ class GeometryQL:
             num_layers: Optional[int] = None, 
         ):
         assert self.is_structured, "Structured boundary layer can only be applied after setTransfiniteAuto"
-        diff_face_edges = set()
-        is_edge = CQ_TYPE_RANKING[type(cq_objs[0])] >= CQ_TYPE_RANKING[cq.Face]
 
         boundary_vertices =  list(CQLinq.select(cq_objs, "vertex"))
-        boundary_solids = set([solid for edge in CQLinq.select(cq_objs, "face") for solid in self._solid_face_groups[edge]])
 
         for (cq_edge, edge) in self._entity_ctx.entity_registries["edge"].items():
             transaction = cast(SetTransfiniteEdge, self._ctx.get_transaction(SetTransfiniteEdge, edge))
             assert edge.type == "edge", "StructuredBoundaryLayer only accepts edges"
             num_elems = get_boundary_num_layers(cq_edge.Length(), ratio, size, num_layers) # type: ignore
-            edge_solids = self._solid_edge_groups[cq_edge]
 
             cq_curr_edge_vertices =  cq_edge.Vertices() # type: ignore
             if cq_curr_edge_vertices[0] in boundary_vertices and cq_curr_edge_vertices[-1] not in boundary_vertices:
-                if is_edge or (boundary_solids & edge_solids):
-                    transaction.num_elems = num_elems
-                    transaction.coef = ratio
-                else:
-                    diff_face_edges.add(cq_edge)
+                transaction.num_elems = num_elems
+                transaction.coef = ratio
 
             elif cq_curr_edge_vertices[-1] in boundary_vertices and cq_curr_edge_vertices[0] not in boundary_vertices:
-                if is_edge or (boundary_solids & edge_solids):
-                    transaction.num_elems = num_elems
-                    transaction.coef = -ratio
-                else:
-                    diff_face_edges.add(cq_edge)
-        
-        if len(diff_face_edges):
-            self._addStructuredBoundaryLayer(list(diff_face_edges), ratio, size, num_layers)
+                transaction.num_elems = num_elems
+                transaction.coef = -ratio
 
     def addBoundaryLayer(self, ratio: float = 1, size: Optional[float] = None, num_layers: Optional[int] = None):
         if self.is_structured:

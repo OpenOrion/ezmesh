@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from plotly import graph_objects as go
 import cadquery as cq
 from cadquery.cq import CQObject, VectorLike
-from typing import Callable, Iterable, Literal, Optional, Sequence, Union, cast
+from typing import Callable, Iterable, Literal, Optional, Sequence, TypeVar, Union, cast
 import numpy as np
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
@@ -11,6 +11,7 @@ from ezmesh.utils.types import OrderedSet, NumpyFloat
 CQType = Literal["compound", "solid", "shell", "face", "wire", "edge", "vertex"]
 CQGroupTypeString = Literal["split", "interior", "exterior"]
 CQEdgeOrFace = Union[cq.Edge, cq.Face]
+TShape = TypeVar('TShape', bound=cq.Shape)
 
 @dataclass
 class DirectedPath:
@@ -195,10 +196,6 @@ class CQLinq:
 
     @staticmethod
     def groupByAngles(cq_edges: Sequence[cq.Edge], angle_threshold: float):
-        # cq_faces = list(CQLinq.select(target, "face"))
-        # for cq_face in cq_faces:
-        # cq_edges = cast(list[cq.Edge], CQLinq.select(face, "edge"))
-
         sorted_paths = CQLinq.sort(cq_edges)
 
         # 1) gather sorted angles of edges
@@ -249,16 +246,16 @@ class CQExtensions:
         return (not invert and interior_dot_product < 0) or (invert and interior_dot_product >= 0)
 
     @staticmethod
-    def find_nearest_point(workplane: cq.Workplane, near_point: cq.Vertex, tolerance: float = 1e-2):
+    def find_nearest_point(workplane: cq.Workplane, near_point: cq.Vertex, tolerance: float = 1e-2) -> cq.Vertex:
         min_dist_vertex, min_dist = None, float("inf")
         for vertex in workplane.vertices().vals():
             dist = cast(cq.Vertex, vertex).distance(near_point)
             if dist < min_dist and dist <= tolerance:
                 min_dist_vertex, min_dist = vertex, dist
-        return min_dist_vertex
+        return cast(cq.Vertex, min_dist_vertex)
 
     @staticmethod
-    def split_intersect(workplane: cq.Workplane, anchor: VectorLike, splitter: CQObject, snap_tolerance: Optional[float] = None):
+    def split_intersect(workplane: cq.Workplane, anchor: VectorLike, splitter: CQObject, snap_tolerance: Optional[float] = None) -> Optional[cq.Vertex]:
         intersected_vertices = workplane.intersect(cq.Workplane(splitter)).vertices().vals()
         min_dist_vertex, min_dist = None, float("inf") 
         for vertex in intersected_vertices:
@@ -266,7 +263,7 @@ class CQExtensions:
                 to_intersect_line = cq.Edge.makeLine(anchor, vertex.toTuple()) # type: ignore
                 intersect_dist = to_intersect_line.Length() # type: ignore
                 if intersect_dist < min_dist:
-                    min_dist_vertex, min_dist = vertex, intersect_dist
+                    min_dist_vertex, min_dist = cast(cq.Vertex, vertex), intersect_dist
             except: ...
         if snap_tolerance and isinstance(min_dist_vertex, cq.Vertex):
             nearest_point = CQExtensions.find_nearest_point(workplane, min_dist_vertex, snap_tolerance)
@@ -305,7 +302,7 @@ class CQExtensions:
         elif isinstance(target, Sequence) and isinstance(target[0], CQObject):
             edge_groups = [cast(Sequence[CQObject], target)]
         elif isinstance(target, Sequence) and isinstance(target[0], Group):
-            edge_groups = [[path.edge for path in group.paths]for group in target]
+            edge_groups = [[path.edge for path in cast(Group, group).paths]for group in target]
             edge_group_names = [f"Group{i}" for i in range(len(edge_groups))]
         else:
             target = cast(Sequence[Sequence], target)
@@ -360,6 +357,15 @@ class CQExtensions:
                 prev_selector = cq.selectors.AndSelector(prev_selector, selector)
             return prev_selector
 
+    @staticmethod
+    def scale(shape: TShape, x: float = 1, y: float = 1, z: float = 1) -> TShape:
+        t = cq.Matrix([
+            [x, 0, 0, 0],
+            [0, y, 0, 0],
+            [0, 0, z, 0],
+            [0, 0, 0, 1]
+        ])
+        return shape.transformGeometry(t)
 
 class IndexSelector(cq.Selector):
     def __init__(self, indices: Sequence[int]):
