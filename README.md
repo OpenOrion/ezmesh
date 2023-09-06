@@ -7,7 +7,7 @@
         <img src="https://img.shields.io/discord/913193916885524552?logo=discord"
             alt="chat on Discord">
     </a>
-    <a href="https://www.patreon.com/turbodesigner">
+    <a href="https://www.patreon.com/openorion">
         <img src="https://img.shields.io/badge/dynamic/json?color=%23e85b46&label=Patreon&query=data.attributes.patron_count&suffix=%20patrons&url=https%3A%2F%2Fwww.patreon.com%2Fapi%2Fcampaigns%2F9860430"
             alt="donate to Patreon">
     </a>
@@ -22,16 +22,16 @@ ezmesh is a declarative tool that parametrically generates meshes compliant with
 # Install
 ## Latest
 ```
-pip install git+https://github.com/Turbodesigner/ezmesh.git#egg=ezmesh
+pip install git+https://github.com/OpenOrion/ezmesh.git#egg=ezmesh
 ```
 
 ## Other Versions
 ```
 # Version 2
-pip install git+https://github.com/Turbodesigner/ezmesh.git@2.0.0#egg=ezmesh
+pip install git+https://github.com/OpenOrion/ezmesh.git@2.0.0#egg=ezmesh
 
 # Version 1
-pip install git+https://github.com/Turbodesigner/ezmesh.git@1.0.0#egg=ezmesh
+pip install git+https://github.com/OpenOrion/ezmesh.git@1.0.0#egg=ezmesh
 ```
 
 # Example
@@ -79,11 +79,11 @@ visualize_mesh(mesh)
 
 # Devlopement Setup
 ```
-git clone https://github.com/Turbodesigner/ezmesh.git
+git clone https://github.com/OpenOrion/ezmesh.git
 cd ezmesh
 pip install -r requirements_dev.txt
 ```
 
 # Help Wanted
-Right now there are some items such as more CFD meshing configurations. Please join the [Discord](https://discord.gg/H7qRauGkQ6) for project communications and collaboration. Please consider donating to the [Patreon](https://www.patreon.com/turbodesigner) to support future work on this project.
+Right now there are some items such as more CFD meshing configurations. Please join the [Discord](https://discord.gg/H7qRauGkQ6) for project communications and collaboration. Please consider donating to the [Patreon](https://www.patreon.com/openorion) to support future work on this project.
 
