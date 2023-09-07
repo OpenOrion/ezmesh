@@ -185,6 +185,7 @@ class GeometryQL:
         return self
 
     def setTransfiniteFace(self, arrangement: TransfiniteArrangementType = "Left", corner_indexes: Sequence[int] = []):
+        self.is_structured = True    
         cq_face_batch = CQLinq.select_batch(self._workplane, "solid", "face")
         for i, cq_faces in enumerate(cq_face_batch):
             faces = self._entity_ctx.select_many(cq_faces)
@@ -201,6 +202,7 @@ class GeometryQL:
         return self
 
     def _setTransfiniteFaceAuto(self, cq_faces: Sequence[cq.Face], num_nodes: int, group_angle: float = 0.0):
+        self.is_structured = True    
         edge_transactions = []
         for cq_face in cq_faces:
             edges_groups = CQLinq.groupByAngles(cq_face.Edges(), group_angle)

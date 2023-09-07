@@ -14,6 +14,7 @@ from ezmesh.utils.types import OrderedSet, NumpyFloat
 from OCP.BRepTools import BRepTools
 from OCP.BRep import BRep_Builder
 from OCP.TopoDS import TopoDS_Shape
+from jupyter_cadquery import show
 
 CQType = Literal["compound", "solid", "shell", "face", "wire", "edge", "vertex"]
 CQGroupTypeString = Literal["split", "interior", "exterior"]
@@ -187,9 +188,8 @@ class CQLinq:
         else:
             for face in faces:
                 assert isinstance(face, cq.Face), "object must be a face"
-                split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5)))
+                split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5)), use_cache=False)
                 is_interior = CQExtensions.is_interior_face(face) 
-
                 if split_intersect:
                     face_registry = groups["split"]
                 else:
@@ -290,16 +290,16 @@ class CQExtensions:
         cache_file_name = CQCache.get_file_name(shape_combo) if use_cache else ""
 
         if use_cache and cache_exists:
-            intersected_faces = CQCache.import_brep(cache_file_name)
+            intersected_edges = CQCache.import_brep(cache_file_name)
         else:
-            intersected_faces = workplane.intersect(cq.Workplane(splitter)).faces().vals()
-            if len(intersected_faces) == 0:
+            intersected_edges = workplane.intersect(cq.Workplane(splitter)).edges().vals()
+            if len(intersected_edges) == 0:
                 return None
-            shape = CQExtensions.fuse_shapes(intersected_faces)
+            shape = CQExtensions.fuse_shapes(intersected_edges)
             if use_cache:
                 CQCache.export_brep(shape, cache_file_name)
+        intersected_vertices = OrderedSet(CQLinq.select(intersected_edges, "vertex"))
 
-        intersected_vertices = CQLinq.select(intersected_faces, "vertex")
         min_dist_vertex, min_dist = None, float("inf") 
         for vertex in intersected_vertices:
             try:

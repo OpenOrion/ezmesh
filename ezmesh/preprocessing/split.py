@@ -137,8 +137,6 @@ class Split:
         return Split.from_pnts(wire_pnts)
 
 
-
-
 def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face], use_cache: bool = True):
     shape_combo = [*workplane.vals(), *splits]
     cache_exists = CQCache.get_cache_exists(shape_combo) if use_cache else False
