@@ -44,7 +44,7 @@ class Entity:
 class CQEntityContext:
     "Maps OCC objects to gmsh entity tags"
     def __init__(self, workplane: cq.Workplane) -> None:
-        self.dimension = 2 if isinstance(workplane.val(), cq.Face) else 3
+        self.dimension = 3 if len(workplane.solids().vals()) else 2
 
         self.entity_registries: dict[CQType, OrderedDict[CQObject, Entity]] = {
             "solid": OrderedDict[CQObject, Entity](),
@@ -93,7 +93,7 @@ class CQEntityContext:
             yield self.select_many(selected_batch)
 
     def _init_3d_objs(self, target: Union[cq.Workplane, Sequence[CQObject]]):
-        objs = target.vals() if isinstance(target, cq.Workplane) else target
+        objs = CQLinq.select(target, "solid")
         for compound in cast(Sequence[cq.Solid], objs):
             for solid in compound.Solids():
                 for shell in solid.Shells():
@@ -102,7 +102,7 @@ class CQEntityContext:
                 self.add(solid)
 
     def _init_2d_objs(self, target: Union[cq.Workplane, Sequence[CQObject]]):
-        objs = target.vals() if isinstance(target, cq.Workplane) else target
+        objs = CQLinq.select(target, "face")
         for face in cast(Sequence[cq.Face], objs):
             for wire in [face.outerWire(), *face.innerWires()]:
                 for edge in wire.Edges():

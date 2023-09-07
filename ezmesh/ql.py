@@ -4,7 +4,7 @@ from cadquery.cq import CQObject
 from typing import Callable, Iterable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
 import numpy as np
-from ezmesh.entity import CQEntityContext
+from ezmesh.entity import CQEntityContext, Entity
 from ezmesh.preprocessing.split import split_workplane
 from ezmesh.transaction import TransactionContext
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm2D
@@ -13,11 +13,10 @@ from ezmesh.transactions.physical_group import SetPhysicalGroup
 from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
 from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType, get_num_nodes_for_ratios
 from ezmesh.mesh.exporters import export_to_su2
-from ezmesh.utils.cq import CQ_TYPE_RANKING, CQ_TYPE_STR_MAPPING, CQExtensions, CQGroupTypeString, CQLinq, CQType, Group
+from ezmesh.utils.cq import CQ_TYPE_RANKING, CQ_TYPE_STR_MAPPING, CQExtensions, CQGroupTypeString, CQLinq, CQType
 from ezmesh.utils.types import OrderedSet
 from ezmesh.visualizer import visualize_mesh
 from jupyter_cadquery import show
-
 
 
 class GeometryQL:
@@ -45,19 +44,15 @@ class GeometryQL:
     def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], splits: Optional[Callable[[cq.Workplane], Sequence[cq.Face]]] = None):
         assert self._workplane is None, "Workplane is already loaded."
 
-        self._pre_split_workplane = workplane = CQExtensions.import_workplane(target)
-
-        if splits:
-            workplane = split_workplane(self._pre_split_workplane, splits(self._pre_split_workplane))
-            
-        self._workplane = self._initial_workplane = workplane
-        self._entity_ctx = CQEntityContext(self._workplane)
-        self._type_groups = CQLinq.groupByTypes(self._workplane)
+        split_preprocessing = (lambda workplane: split_workplane(workplane, splits(workplane))) if splits else None        
+        self._workplane = self._initial_workplane = CQExtensions.import_workplane(target, split_preprocessing)
 
         topods = self._workplane.toOCC()
-
         gmsh.model.occ.importShapesNativePointer(topods._address())
         gmsh.model.occ.synchronize()
+
+        self._entity_ctx = CQEntityContext(self._workplane)
+        self._type_groups = CQLinq.groupByTypes(self._workplane)
 
         self._tag_workplane()
 
@@ -127,12 +122,24 @@ class GeometryQL:
             self._workplane = self._workplane.newObject(filtered_objs)
         return self
 
-    def addPhysicalGroup(self, names: Union[str, Sequence[str]], tagWorkspace: bool = True):
-        for name in ([names] if isinstance(names, str) else names):
-            set_physical_group = SetPhysicalGroup(self.vals(), name)
+    def addPhysicalGroup(self, group: Union[str, Sequence[str]]):
+        if  isinstance(group, str):
+            set_physical_group = SetPhysicalGroup(self.vals(), group)
             self._ctx.add_transaction(set_physical_group)
-        if tagWorkspace:
-            self.tag(names)
+        else:
+            objs = list(self.vals())
+            group_entities: dict[str, OrderedSet[Entity]] = {}
+
+            for i, group_name in enumerate(group):
+                new_group_entity = objs[i]
+                if group_name not in group_entities:
+                    group_entities[group_name] = OrderedSet()
+                group_entities[group_name].add(new_group_entity)
+            
+            for group_name, group_objs in group_entities.items():
+                set_physical_group = SetPhysicalGroup(group_objs, group_name)
+                self._ctx.add_transaction(set_physical_group)
+
         return self
 
     def recombine(self, angle: float = 45):
@@ -171,7 +178,7 @@ class GeometryQL:
                 edge, 
                 num_nodes if isinstance(num_nodes, int) else num_nodes[i], 
                 mesh_type if isinstance(mesh_type, str) else mesh_type[i], 
-                coef if isinstance(coef, float) else coef[i]
+                coef if isinstance(coef, (int, float)) else coef[i]
             ) for i,edge in enumerate(edges)]
             self._ctx.add_transactions(set_transfinite_edges)
 
@@ -199,6 +206,7 @@ class GeometryQL:
         self.is_structured = True
         edge_transactions = []
 
+        # make this work for non solids
         for cq_solid in CQLinq.select(self._workplane, "solid"):
             cq_solid_corners = set()
             for cq_face in cq_solid.Faces():
@@ -225,7 +233,7 @@ class GeometryQL:
                     for j, path in enumerate(group.paths):
                         assert edge_num_nodes[j] != 0, "edge nodes of 0 detected, raise the num_nodes"
                         edge = self._entity_ctx.select(path.edge)
-                        set_transfinite_edge = SetTransfiniteEdge(edge, edge_num_nodes[j], "Progression", 1.0)
+                        set_transfinite_edge = SetTransfiniteEdge(edge, edge_num_nodes[j])
                         edge_transactions.append(set_transfinite_edge)
 
             solid_corners = self._entity_ctx.select_many(cq_solid_corners)
@@ -297,8 +305,7 @@ class GeometryQL:
             assert self._ctx.mesh is not None, "Mesh is not generated yet."
             visualize_mesh(self._ctx.mesh, only_markers=only_markers)
         elif type == "plot":
-            edge_names = [f"Edge{edge.tag}" for edge in self._entity_ctx.select_many(self._workplane, "edge")]
-            CQExtensions.plot_cq(self._workplane, edge_names)
+            CQExtensions.plot_cq(self._workplane, ctx=self._entity_ctx)
         else:
             show(self._workplane, theme="dark")
         return self

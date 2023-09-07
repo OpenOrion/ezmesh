@@ -3,7 +3,7 @@ import numpy as np
 
 NumpyFloat = np.float32
 Number = Union[int, float, NumpyFloat]
-VectorTuple = tuple[float, float, float]
+VectorTuple = Union[tuple[float, float, float], tuple[float, float]]
 LineTuple = tuple[VectorTuple, VectorTuple]
 
 T = TypeVar("T")
@@ -45,3 +45,6 @@ class OrderedSet(MutableSet[T]):
 
     def __repr__(self):
         return f"<OrderedSet {self}>"
+
+    # def __getitem__(self, index):
+    #     return list(self)[index]

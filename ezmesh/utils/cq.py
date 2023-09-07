@@ -75,25 +75,29 @@ class CQLinq:
                yield from CQLinq.select(workplane._getTagged(tag).vals(), type)    
 
     @staticmethod
-    def select(target: Union[cq.Workplane, Iterable[CQObject], CQObject], type: Optional[CQType] = None):
-        cq_objs = target.vals() if isinstance(target, cq.Workplane) else (target if isinstance(target, Iterable) else [target])
+    def select(target: Union[cq.Workplane, Iterable[CQObject], CQObject], select_type: Optional[CQType] = None):
+        cq_objs = target.vals() if isinstance(target, cq.Workplane) else (list(target) if isinstance(target, Iterable) else [target])
+        
+        if type is None or CQ_TYPE_STR_MAPPING[type(cq_objs[0])] == select_type:
+            yield from cq_objs
+        
         for cq_obj in cq_objs:
             assert isinstance(cq_obj, cq.Shape), "target must be a shape"
-            if type is None:
+            if select_type is None:
                 yield cq_obj
-            elif type == "compound":
+            elif select_type == "compound":
                 yield from cq_obj.Compounds()
-            elif type == "solid":
+            elif select_type == "solid":
                 yield from cq_obj.Solids()
-            elif type == "shell":
+            elif select_type == "shell":
                 yield from cq_obj.Shells()
-            elif type == "face":
+            elif select_type == "face":
                 yield from cq_obj.Faces()
-            elif type == "wire":
+            elif select_type == "wire":
                 yield from cq_obj.Wires()
-            elif type == "edge":
+            elif select_type == "edge":
                 yield from cq_obj.Edges()
-            elif type == "vertex":
+            elif select_type == "vertex":
                 yield from cq_obj.Vertices()
 
     @staticmethod
@@ -106,12 +110,18 @@ class CQLinq:
             for parent_occ_obj in parent_cq_objs:
                 yield CQLinq.select([parent_occ_obj], child_type)
 
+    # TODO: take a look later if this function is even needed
     @staticmethod
     def filter(objs: Iterable[CQObject], filter_objs: Iterable[CQObject], invert: bool):
-        filter_objs = set(filter_objs)
-        for occ_obj in objs:
-            if (invert and occ_obj in filter_objs) or (not invert and occ_obj not in filter_objs):
-                yield occ_obj
+        filtered = []
+        filter_objs = OrderedSet(filter_objs)
+        for cq_obj in objs:
+            if (invert and cq_obj in filter_objs) or (not invert and cq_obj not in filter_objs):
+                filtered.append(cq_obj)
+
+        # sort filtered in the same order as filtered_objs
+        return [cq_obj for cq_obj in filter_objs if cq_obj in filtered]
+        
 
     @staticmethod
     def sort(target: Union[cq.Edge, Sequence[cq.Edge]]):
@@ -157,7 +167,12 @@ class CQLinq:
             "exterior": OrderedSet[CQObject](),
         }
         faces = list(CQLinq.select(target, "face"))
-        if len(faces) > 1:
+        is_2d = isinstance(workplane.val(), cq.Face)
+        if is_2d:
+            first_face = cast(cq.Face, faces[0])
+            add_wire_to_group(first_face.innerWires(), groups["interior"])
+            add_wire_to_group([first_face.outerWire()], groups["exterior"])
+        else:
             for face in faces:
                 assert isinstance(face, cq.Face), "object must be a face"
                 split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5)))
@@ -170,10 +185,6 @@ class CQLinq:
                 face_registry.add(face)
                 if not only_faces:
                     add_wire_to_group(face.Wires(), face_registry)
-        else:
-            first_face = cast(cq.Face, faces[0])
-            add_wire_to_group(first_face.innerWires(), groups["interior"])
-            add_wire_to_group([first_face.outerWire()], groups["exterior"])
 
         return groups
 
@@ -283,17 +294,32 @@ class CQExtensions:
         assert not np.isnan(angle), "angle should not be NaN"
         return angle
 
+    @staticmethod
+    def fuse_shapes(shapes: Sequence[cq.Shape]):
+        fused_shape: Optional[CQObject] = None
+        for shape in shapes:
+            if fused_shape:
+                fused_shape = fused_shape.fuse(shape)
+            else:
+                fused_shape = shape
+        assert fused_shape is not None, "No shapes to fuse"
+        return fused_shape
+
 
     @staticmethod
     def plot_cq(
         target: Union[cq.Workplane, CQObject, Sequence[CQObject], Sequence[Group], Sequence[Sequence[CQObject]]], 
-        edge_group_names: Optional[Sequence[str]] = None,
         title: str = "Plot", 
         samples_per_spline: int = 50,
+        ctx = None
     ):
+        from ezmesh.entity import CQEntityContext
+        ctx = cast(CQEntityContext, ctx)
+
         fig = go.Figure(
             layout=go.Layout(title=go.layout.Title(text=title))
         )
+
 
         if isinstance(target, cq.Workplane):
             edge_groups = [[edge] for edge in CQLinq.select(target, "edge")]
@@ -303,13 +329,13 @@ class CQExtensions:
             edge_groups = [cast(Sequence[CQObject], target)]
         elif isinstance(target, Sequence) and isinstance(target[0], Group):
             edge_groups = [[path.edge for path in cast(Group, group).paths]for group in target]
-            edge_group_names = [f"Group{i}" for i in range(len(edge_groups))]
         else:
             target = cast(Sequence[Sequence], target)
-            edge_groups = cast(Sequence[Iterable[CQObject]], target)
+            edge_groups = cast(Sequence[Sequence[CQObject]], target)
 
         for i, edges in enumerate(edge_groups):
-            edge_name = edge_group_names[i] if edge_group_names else f"Edge{i}"
+
+            edge_name = f"Edge{ctx.select(edges[0]).tag}" if ctx else f"Edge{i}"
             sampling = get_sampling(0, 1, samples_per_spline, False)
             coords = np.concatenate([np.array([vec.toTuple() for vec in edge.positions(sampling)], dtype=NumpyFloat) for edge in edges]) # type: ignore
             add_plot(coords, fig, edge_name)
@@ -318,7 +344,14 @@ class CQExtensions:
         fig.show()
 
     @staticmethod
-    def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
+    def get_dimension(workplane: cq.Workplane):
+        return 2 if len(workplane.solids().vals()) == 0 else 3
+
+    @staticmethod
+    def import_workplane(
+        target: Union[cq.Workplane, str, Iterable[CQObject]], 
+        preprocess_workplane: Optional[Callable[[cq.Workplane], cq.Workplane]] = None
+    ):
         if isinstance(target, str):
             if target.lower().endswith(".step"):
                 workplane = cq.importers.importStep(target)
@@ -330,10 +363,19 @@ class CQExtensions:
             workplane = cq.Workplane().newObject(target)
         else:
             workplane = target
-        if isinstance(workplane.val(), cq.Wire):
-            workplane = cq.Workplane().newObject(workplane.extrude(-1).faces(">Z").vals())
 
-        workplane.tag("root")
+        if CQExtensions.get_dimension(workplane) == 2:
+            # extrude down to get a solid for preprocessing (i.e splits for now)
+            workplane = workplane.extrude(-1)
+            if preprocess_workplane:
+                workplane = preprocess_workplane(workplane)
+            # fuses top faces to appear as one Compound in GMSH
+            faces = cast(Sequence[cq.Face], workplane.faces(">Z").vals())
+            fused_face = CQExtensions.fuse_shapes(faces)
+            workplane = cq.Workplane(fused_face)
+        elif preprocess_workplane:
+            workplane = preprocess_workplane(workplane)
+
 
         return workplane
 

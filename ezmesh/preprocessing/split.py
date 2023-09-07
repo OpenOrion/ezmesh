@@ -1,11 +1,9 @@
 import numpy as np
 import cadquery as cq
-from cadquery.cq import VectorLike, CQObject
-from typing import Literal, Optional, Sequence, Union, cast
+from cadquery.cq import VectorLike
+from typing import Literal, Optional, Sequence, Union
 from ezmesh.utils.cq import CQExtensions, CQLinq
-from ezmesh.utils.types import LineTuple, VectorTuple, Number
-from jupyter_cadquery.cadquery import show
-
+from ezmesh.utils.types import LineTuple, VectorTuple
 
 Axis = Union[Literal["X", "Y", "Z"], VectorTuple, cq.Vector]
 def get_normal_from_axis(axis: Axis):
@@ -14,6 +12,11 @@ def get_normal_from_axis(axis: Axis):
     elif isinstance(axis, tuple):
         return cq.Vector(axis)
     return axis
+
+def norm_line_tuple(line: LineTuple):
+    pnt1 = tuple(float(v) for v in ((*line[0], 0) if len(line[0]) == 2 else line[0]))
+    pnt2 = tuple(float(v) for v in ((*line[1], 0) if len(line[1]) == 2 else line[1]))
+    return (pnt1, pnt2)
 
 class Split:
     @staticmethod
@@ -74,7 +77,7 @@ class Split:
         return Split.from_lines(workplane, edges)
     
     @staticmethod
-    def from_pnts(workplane: cq.Workplane, pnts: Sequence[cq.Vector]):
+    def from_pnts(pnts: Sequence[VectorLike]):
         return cq.Face.makeFromWires(cq.Wire.makePolygon(pnts))
 
     @staticmethod
@@ -117,7 +120,7 @@ class Split:
         dir: Literal["away", "towards", "both"] = "both",
     ):
         
-        edges_pnts = np.array([lines, lines] if isinstance(lines, tuple) else lines)
+        edges_pnts = np.array([norm_line_tuple(lines), norm_line_tuple(lines)] if isinstance(lines, tuple) else [norm_line_tuple(line) for line in lines])
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
         normal_vector = np.array(get_normal_from_axis(axis).toTuple())
 
@@ -129,10 +132,9 @@ class Split:
         side1 = edges_pnts[:, 0].tolist()
         side2 = edges_pnts[:, 1].tolist()
         wire_pnts = [side1[0], *side2, *side1[1:][::-1]] 
-        return Split.from_pnts(workplane, wire_pnts)
+        return Split.from_pnts(wire_pnts)
 
 def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face]):
     for split in splits:      
         workplane = workplane.split(split)
     return workplane
-    return cq.Workplane(compound)
