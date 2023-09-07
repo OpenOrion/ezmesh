@@ -200,50 +200,46 @@ class GeometryQL:
         self._ctx.add_transactions(set_transfinite_solids)
         return self
 
+    def _setTransfiniteFaceAuto(self, cq_faces: Sequence[cq.Face], num_nodes: int, group_angle: float):
+        edge_transactions = []
+        for cq_face in cq_faces:
+            edges_groups = CQLinq.groupByAngles(cq_face.Edges(), group_angle)
+            cq_face_corners = OrderedSet([group.paths[0].start for group in edges_groups])
+            if len(cq_face_corners) not in [3,4]:
+                CQExtensions.plot_cq(edges_groups)
+            assert len(cq_face_corners) in [3,4], f"Face must have 3 or 4 corners, instead has {len(cq_face_corners)}"
+            face = self._entity_ctx.select(cq_face)
+            corners = self._entity_ctx.select_many(cq_face_corners)
+            set_transfinite_face = SetTransfiniteFace(face, corners=corners)
+            self._ctx.add_transaction(set_transfinite_face)
+            
+            for i, group in enumerate(edges_groups):
+                group_length = np.sum([path.edge.Length() for path in group.paths]) # type: ignore
+                ratios = [path.edge.Length()/group_length for path in group.paths] # type: ignore
+
+                edge_num_nodes = get_num_nodes_for_ratios(num_nodes, ratios)
+                for j, path in enumerate(group.paths):
+                    assert edge_num_nodes[j] != 0, "edge nodes of 0 detected, raise the num_nodes"
+                    edge = self._entity_ctx.select(path.edge)
+                    set_transfinite_edge = SetTransfiniteEdge(edge, edge_num_nodes[j])
+                    edge_transactions.append(set_transfinite_edge)
+        self._ctx.add_transactions(edge_transactions, ignore_duplicates=True)
+
+
     def setTransfiniteAuto(self, num_nodes: int, group_angle: float = 0):
+        self.is_structured = True
+        if CQExtensions.get_dimension(self._workplane) == 2:
+            cq_faces = cast(Sequence[cq.Face], CQLinq.select(self._workplane, "face"))
+            self._setTransfiniteFaceAuto(cq_faces, num_nodes, group_angle)
+        else:
+            for cq_solid in cast(Sequence[cq.Solid], CQLinq.select(self._workplane, "solid")):
+                solid = self._entity_ctx.select(cq_solid)
+                set_transfinite_solid = SetTransfiniteSolid(solid)
+                self._setTransfiniteFaceAuto(cq_solid.Faces(), num_nodes, group_angle)
+                self._ctx.add_transaction(set_transfinite_solid)
         # transfinite_auto = SetTransfiniteAuto()
         # self._ctx.add_transaction(transfinite_auto)
-        self.is_structured = True
-        edge_transactions = []
 
-        # make this work for non solids
-        for cq_solid in CQLinq.select(self._workplane, "solid"):
-            cq_solid_corners = set()
-            for cq_face in cq_solid.Faces():
-                edges_groups = CQLinq.groupByAngles(cq_face.Edges(), group_angle)
-                for group in edges_groups:
-                    if group.start in self._type_groups["split"]:
-                        cq_solid_corners.add(group.start)
-                    if group.end in self._type_groups["split"]:
-                        cq_solid_corners.add(group.end)
-                cq_face_corners = [group.paths[0].start for group in edges_groups]
-                if len(edges_groups) not in [3,4]:
-                    CQExtensions.plot_cq(edges_groups)
-                assert len(edges_groups) in [3,4], "Face must have 3 or 4 corners"
-                face = self._entity_ctx.select(cq_face)
-                corners = self._entity_ctx.select_many(cq_face_corners)
-                set_transfinite_face = SetTransfiniteFace(face, corners=corners)
-                self._ctx.add_transaction(set_transfinite_face)
-                
-                for i, group in enumerate(edges_groups):
-                    group_length = np.sum([path.edge.Length() for path in group.paths]) # type: ignore
-                    ratios = [path.edge.Length()/group_length for path in group.paths] # type: ignore
-
-                    edge_num_nodes = get_num_nodes_for_ratios(num_nodes, ratios)
-                    for j, path in enumerate(group.paths):
-                        assert edge_num_nodes[j] != 0, "edge nodes of 0 detected, raise the num_nodes"
-                        edge = self._entity_ctx.select(path.edge)
-                        set_transfinite_edge = SetTransfiniteEdge(edge, edge_num_nodes[j])
-                        edge_transactions.append(set_transfinite_edge)
-
-            solid_corners = self._entity_ctx.select_many(cq_solid_corners)
-            assert len(solid_corners) <= 8, "Solid must have <=8 corners"
-
-            solid = self._entity_ctx.select(cq_solid)
-            set_transfinite_solid = SetTransfiniteSolid(solid)
-            self._ctx.add_transaction(set_transfinite_solid)
-
-        self._ctx.add_transactions(edge_transactions, ignore_duplicates=True)
 
         return self
 
