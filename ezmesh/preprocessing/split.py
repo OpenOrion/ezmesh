@@ -2,7 +2,7 @@ import numpy as np
 import cadquery as cq
 from cadquery.cq import VectorLike
 from typing import Literal, Optional, Sequence, Union
-from ezmesh.utils.cq import CQExtensions, CQLinq
+from ezmesh.utils.cq import CQCache, CQExtensions, CQLinq
 from ezmesh.utils.types import LineTuple, VectorTuple
 
 Axis = Union[Literal["X", "Y", "Z"], VectorTuple, cq.Vector]
@@ -31,6 +31,7 @@ class Split:
         workplane: cq.Workplane, 
         face_type: Literal['interior', 'exterior'],
         snap_tolerance: Optional[float] = None,
+        use_cache: bool = True
     ):
         type_groups = CQLinq.groupByTypes(workplane, only_faces=True)
         dir = "away" if face_type == "interior" else "towards"
@@ -50,8 +51,7 @@ class Split:
             edge_vec = cq.Vector(edge.endPoint().toTuple()) - cq.Vector(edge.startPoint().toTuple())
             is_parallel = edge_vec.dot(average_normal) == 0
             if is_parallel:
-                yield Split.from_edge(workplane, edge, average_normal, dir, snap_tolerance)
-
+                yield Split.from_edge(workplane, edge, average_normal, dir, snap_tolerance, use_cache)
 
 
     @staticmethod
@@ -60,7 +60,8 @@ class Split:
         anchor: Union[list[VectorTuple], VectorTuple] = (0,0,0), 
         dir: Union[list[VectorTuple], VectorTuple] = (0,0,0),
         snap_tolerance: Optional[float] = None,
-        until: Literal["next", "all"] = "next"
+        until: Literal["next", "all"] = "next",
+        use_cache: bool = True
     ):
         anchors = [anchor] if isinstance(anchor, tuple) else anchor
         dirs = [dir] if isinstance(dir, tuple) else dir
@@ -70,7 +71,7 @@ class Split:
         for anchor, dir in zip(anchors, dirs):
             split_face = Split.from_plane(anchor, dir)
             if until == "next":
-                intersect_vertex = CQExtensions.split_intersect(workplane, anchor, split_face, snap_tolerance)
+                intersect_vertex = CQExtensions.split_intersect(workplane, anchor, split_face, snap_tolerance, use_cache)
                 edges.append((anchor, intersect_vertex.toTuple())) # type: ignore
             else:
                 edges.append(split_face)
@@ -86,7 +87,8 @@ class Split:
         edge: cq.Edge, 
         axis: Union[Literal["X", "Y", "Z"], VectorTuple, cq.Vector] = "Z",
         dir: Literal["away", "towards", "both"] = "both",
-        snap_tolerance: Optional[float] = None
+        snap_tolerance: Optional[float] = None,
+        use_cache: bool = True
     ):
         scaled_edge = CQExtensions.scale(edge, z=10)
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
@@ -104,7 +106,7 @@ class Split:
         ]))
 
         if snap_tolerance:
-            intersect_vertex = CQExtensions.split_intersect(workplane, edge.startPoint(), split_face, snap_tolerance)
+            intersect_vertex = CQExtensions.split_intersect(workplane, edge.startPoint(), split_face, snap_tolerance, use_cache)
             assert intersect_vertex, "No intersection found"
             intersect_vec = cq.Vector(intersect_vertex.toTuple()) - cq.Vector(edge.startPoint().toTuple())
             intersect_vec_norm = intersect_vec/intersect_vec.Length
@@ -134,7 +136,19 @@ class Split:
         wire_pnts = [side1[0], *side2, *side1[1:][::-1]] 
         return Split.from_pnts(wire_pnts)
 
-def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face]):
-    for split in splits:      
-        workplane = workplane.split(split)
-    return workplane
+
+
+
+def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face], use_cache: bool = True):
+    shape_combo = [*workplane.vals(), *splits]
+    cache_exists = CQCache.get_cache_exists(shape_combo) if use_cache else False
+    cache_file_name = CQCache.get_file_name(shape_combo) if use_cache else ""
+    if use_cache and cache_exists:
+        shape = CQCache.import_brep(cache_file_name)
+    else:
+        for split in splits:      
+            workplane = workplane.split(split)
+        shape = CQExtensions.fuse_shapes(workplane.vals())
+        if use_cache:
+            CQCache.export_brep(shape, cache_file_name)
+    return cq.Workplane(shape)

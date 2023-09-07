@@ -1,4 +1,8 @@
 from dataclasses import dataclass, field
+import os
+import tempfile
+import hashlib
+import base64
 from plotly import graph_objects as go
 import cadquery as cq
 from cadquery.cq import CQObject, VectorLike
@@ -7,11 +11,19 @@ import numpy as np
 from ezmesh.utils.plot import add_plot
 from ezmesh.utils.shapes import get_sampling
 from ezmesh.utils.types import OrderedSet, NumpyFloat
+from OCP.BRepTools import BRepTools
+from OCP.BRep import BRep_Builder
+from OCP.TopoDS import TopoDS_Shape
 
 CQType = Literal["compound", "solid", "shell", "face", "wire", "edge", "vertex"]
 CQGroupTypeString = Literal["split", "interior", "exterior"]
 CQEdgeOrFace = Union[cq.Edge, cq.Face]
 TShape = TypeVar('TShape', bound=cq.Shape)
+
+
+TEMPDIR_PATH = tempfile.gettempdir()
+CACHE_DIR_NAME = "meshql_geom_cache"
+CACHE_DIR_PATH = os.path.join(TEMPDIR_PATH, CACHE_DIR_NAME)
 
 @dataclass
 class DirectedPath:
@@ -266,8 +278,28 @@ class CQExtensions:
         return cast(cq.Vertex, min_dist_vertex)
 
     @staticmethod
-    def split_intersect(workplane: cq.Workplane, anchor: VectorLike, splitter: CQObject, snap_tolerance: Optional[float] = None) -> Optional[cq.Vertex]:
-        intersected_vertices = workplane.intersect(cq.Workplane(splitter)).vertices().vals()
+    def split_intersect(
+        workplane: cq.Workplane, 
+        anchor: VectorLike, 
+        splitter: CQObject, 
+        snap_tolerance: Optional[float] = None,
+        use_cache: bool = True
+    ) -> Optional[cq.Vertex]:
+        shape_combo = [*workplane.vals(), splitter]
+        cache_exists = CQCache.get_cache_exists(shape_combo) if use_cache else False
+        cache_file_name = CQCache.get_file_name(shape_combo) if use_cache else ""
+
+        if use_cache and cache_exists:
+            intersected_faces = CQCache.import_brep(cache_file_name)
+        else:
+            intersected_faces = workplane.intersect(cq.Workplane(splitter)).faces().vals()
+            if len(intersected_faces) == 0:
+                return None
+            shape = CQExtensions.fuse_shapes(intersected_faces)
+            if use_cache:
+                CQCache.export_brep(shape, cache_file_name)
+
+        intersected_vertices = CQLinq.select(intersected_faces, "vertex")
         min_dist_vertex, min_dist = None, float("inf") 
         for vertex in intersected_vertices:
             try:
@@ -295,16 +327,16 @@ class CQExtensions:
         return angle
 
     @staticmethod
-    def fuse_shapes(shapes: Sequence[cq.Shape]):
-        fused_shape: Optional[CQObject] = None
+    def fuse_shapes(shapes: Sequence[CQObject]) -> cq.Shape:
+        fused_shape: Optional[cq.Shape] = None
         for shape in shapes:
+            assert isinstance(shape, cq.Shape), "shape must be a shape"
             if fused_shape:
                 fused_shape = fused_shape.fuse(shape)
             else:
                 fused_shape = shape
         assert fused_shape is not None, "No shapes to fuse"
         return fused_shape
-
 
     @staticmethod
     def plot_cq(
@@ -319,8 +351,6 @@ class CQExtensions:
         fig = go.Figure(
             layout=go.Layout(title=go.layout.Title(text=title))
         )
-
-
         if isinstance(target, cq.Workplane):
             edge_groups = [[edge] for edge in CQLinq.select(target, "edge")]
         elif isinstance(target, CQObject):
@@ -408,6 +438,45 @@ class CQExtensions:
             [0, 0, 0, 1]
         ])
         return shape.transformGeometry(t)
+
+class CQCache:
+    @staticmethod
+    def import_brep(file_path: str):
+        """
+        Import a boundary representation model
+        Returns a TopoDS_Shape object
+        """
+        builder = BRep_Builder()
+        shape = TopoDS_Shape()
+        return_code = BRepTools.Read_s(shape, file_path, builder)
+        if return_code is False:
+            raise ValueError("Import failed, check file name")
+        return cq.Compound(shape)
+
+    @staticmethod
+    def get_cache_exists(obj: Union[Sequence[CQObject], CQObject]):
+        cache_file_name = CQCache.get_file_name(obj)
+        return os.path.isfile(cache_file_name)
+
+    @staticmethod
+    def get_file_name(shape: Union[Sequence[CQObject], CQObject]):
+        prev_vector = cq.Vector(0,0,0)
+        for vertex in cast(Sequence[cq.Vertex], CQLinq.select(shape, "vertex")):
+            prev_vector += vertex.Center()
+        
+        hasher = hashlib.md5()
+        hasher.update(bytes(str(prev_vector.toTuple()), "utf-8"))
+        # encode the hash as a filesystem safe string
+        id = base64.urlsafe_b64encode(hasher.digest()).decode("utf-8")
+        return f"{CACHE_DIR_PATH}/{id}.brep"
+
+    @staticmethod
+    def export_brep(shape: cq.Shape, file_path: str):
+        if CACHE_DIR_NAME not in os.listdir(TEMPDIR_PATH):
+            os.mkdir(CACHE_DIR_PATH)
+        shape.exportBrep(file_path)
+
+
 
 class IndexSelector(cq.Selector):
     def __init__(self, indices: Sequence[int]):

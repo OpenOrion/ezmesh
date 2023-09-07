@@ -17,7 +17,7 @@ from ezmesh.utils.cq import CQ_TYPE_RANKING, CQ_TYPE_STR_MAPPING, CQExtensions, 
 from ezmesh.utils.types import OrderedSet
 from ezmesh.visualizer import visualize_mesh
 from jupyter_cadquery import show
-
+from ezmesh.utils.cq import CQCache
 
 class GeometryQL:
     _workplane: cq.Workplane
@@ -41,10 +41,10 @@ class GeometryQL:
             self._workplane = self._workplane.end(num)
         return self
 
-    def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], splits: Optional[Callable[[cq.Workplane], Sequence[cq.Face]]] = None):
+    def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], splits: Optional[Callable[[cq.Workplane], Sequence[cq.Face]]] = None, use_cache: bool = True):
         assert self._workplane is None, "Workplane is already loaded."
 
-        split_preprocessing = (lambda workplane: split_workplane(workplane, splits(workplane))) if splits else None        
+        split_preprocessing = (lambda workplane: split_workplane(workplane, splits(workplane), use_cache)) if splits else None        
         self._workplane = self._initial_workplane = CQExtensions.import_workplane(target, split_preprocessing)
 
         topods = self._workplane.toOCC()
@@ -200,7 +200,7 @@ class GeometryQL:
         self._ctx.add_transactions(set_transfinite_solids)
         return self
 
-    def _setTransfiniteFaceAuto(self, cq_faces: Sequence[cq.Face], num_nodes: int, group_angle: float):
+    def _setTransfiniteFaceAuto(self, cq_faces: Sequence[cq.Face], num_nodes: int, group_angle: float = 0.0):
         edge_transactions = []
         for cq_face in cq_faces:
             edges_groups = CQLinq.groupByAngles(cq_face.Edges(), group_angle)
@@ -213,7 +213,7 @@ class GeometryQL:
             set_transfinite_face = SetTransfiniteFace(face, corners=corners)
             self._ctx.add_transaction(set_transfinite_face)
             
-            for i, group in enumerate(edges_groups):
+            for group in edges_groups:
                 group_length = np.sum([path.edge.Length() for path in group.paths]) # type: ignore
                 ratios = [path.edge.Length()/group_length for path in group.paths] # type: ignore
 
@@ -239,7 +239,6 @@ class GeometryQL:
                 self._ctx.add_transaction(set_transfinite_solid)
         # transfinite_auto = SetTransfiniteAuto()
         # self._ctx.add_transaction(transfinite_auto)
-
 
         return self
 
