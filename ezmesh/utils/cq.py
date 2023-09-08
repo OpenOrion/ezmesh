@@ -166,7 +166,7 @@ class CQLinq:
     
 
     @staticmethod
-    def groupByTypes(target: Union[cq.Workplane, Sequence[CQObject]], only_faces=False): 
+    def groupByTypes(target: Union[cq.Workplane, Sequence[CQObject]], only_faces=False, check_splits: bool = True): 
         workplane = target if isinstance(target, cq.Workplane) else cq.Workplane().add(target)
         add_wire_to_group = lambda wires, group: group.update([
             *wires,
@@ -188,7 +188,7 @@ class CQLinq:
         else:
             for face in faces:
                 assert isinstance(face, cq.Face), "object must be a face"
-                split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5)), use_cache=False)
+                split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5))) if check_splits else False
                 is_interior = CQExtensions.is_interior_face(face) 
                 if split_intersect:
                     face_registry = groups["split"]
@@ -216,41 +216,6 @@ class CQLinq:
                     groups[child].add(parent)
         return groups
 
-
-    @staticmethod
-    def groupByAngles(cq_edges: Sequence[cq.Edge], angle_threshold: float):
-        sorted_paths = CQLinq.sort(cq_edges)
-
-        # 1) gather sorted angles of edges
-        # 2) shuffle to next group in case in the middle of current group
-        angles = []
-        prev_path = sorted_paths[-1]
-        shuffle_num, shuffle_cutoff = 0, False
-        for path in sorted_paths: # type: ignore
-            angle = CQExtensions.get_angle_between(prev_path.edge, path.edge)
-            
-            if shuffle_cutoff:
-                if angle > np.radians(angle_threshold):
-                    shuffle_cutoff = True
-                shuffle_num += 1
-
-            angles.append(angle)
-            prev_path = path
-
-        # arrange groups based on angles
-        groups: list[Group] = []
-        for i, angle in enumerate(angles[shuffle_num:] + angles[:shuffle_num]):
-            path = sorted_paths[i+shuffle_num]
-            if angle >= np.radians(angle_threshold):
-                prev_group = groups[-1] if len(groups) else None
-                group = Group(prev_group=prev_group)
-                groups.append(group)
-                if prev_group:
-                    prev_group.next_group = group
-            groups[-1].paths.append(path)
-        groups[0].prev_group = groups[-1]
-        groups[-1].next_group = groups[0]
-        return groups
 
     @staticmethod
     def find(target: Union[cq.Workplane, Iterable[CQObject]], where: Callable[[CQObject], bool]):
@@ -283,31 +248,19 @@ class CQExtensions:
         anchor: VectorLike, 
         splitter: CQObject, 
         snap_tolerance: Optional[float] = None,
-        use_cache: bool = True
     ) -> Optional[cq.Vertex]:
-        shape_combo = [*workplane.vals(), splitter]
-        cache_exists = CQCache.get_cache_exists(shape_combo) if use_cache else False
-        cache_file_name = CQCache.get_file_name(shape_combo) if use_cache else ""
 
-        if use_cache and cache_exists:
-            intersected_edges = CQCache.import_brep(cache_file_name)
-        else:
-            intersected_edges = workplane.intersect(cq.Workplane(splitter)).edges().vals()
-            if len(intersected_edges) == 0:
-                return None
-            shape = CQExtensions.fuse_shapes(intersected_edges)
-            if use_cache:
-                CQCache.export_brep(shape, cache_file_name)
+        intersected_edges = workplane.intersect(cq.Workplane(splitter)).edges().vals()
+        if len(intersected_edges) == 0:
+            return None
+
         intersected_vertices = OrderedSet(CQLinq.select(intersected_edges, "vertex"))
-
         min_dist_vertex, min_dist = None, float("inf") 
         for vertex in intersected_vertices:
-            try:
-                to_intersect_line = cq.Edge.makeLine(anchor, vertex.toTuple()) # type: ignore
-                intersect_dist = to_intersect_line.Length() # type: ignore
-                if intersect_dist < min_dist:
+                intersect_dist = (cq.Vector(vertex.X, vertex.Y, vertex.Z) - cq.Vector(anchor)).Length
+                if intersect_dist !=0 and intersect_dist < min_dist:
                     min_dist_vertex, min_dist = cast(cq.Vertex, vertex), intersect_dist
-            except: ...
+            
         if snap_tolerance and isinstance(min_dist_vertex, cq.Vertex):
             nearest_point = CQExtensions.find_nearest_point(workplane, min_dist_vertex, snap_tolerance)
             if nearest_point:
@@ -465,10 +418,10 @@ class CQCache:
             prev_vector += vertex.Center()
         
         hasher = hashlib.md5()
-        hasher.update(bytes(str(prev_vector.toTuple()), "utf-8"))
+        hasher.update(bytes(str(tuple(np.round(prev_vector.toTuple(), 4))), "utf-8"))
         # encode the hash as a filesystem safe string
-        id = base64.urlsafe_b64encode(hasher.digest()).decode("utf-8")
-        return f"{CACHE_DIR_PATH}/{id}.brep"
+        shape_id = base64.urlsafe_b64encode(hasher.digest()).decode("utf-8")
+        return f"{CACHE_DIR_PATH}/{shape_id}.brep"
 
     @staticmethod
     def export_brep(shape: cq.Shape, file_path: str):

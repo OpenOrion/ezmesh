@@ -22,7 +22,7 @@ class Split:
     @staticmethod
     def from_plane(
         base_pnt: VectorLike = (0,0,0), 
-        angle: VectorTuple = (0,0,0), 
+        angle: VectorTuple = (0,0,1), 
     ):
         return cq.Face.makePlane(None, None, base_pnt, tuple(np.radians(angle)))
 
@@ -31,9 +31,10 @@ class Split:
         workplane: cq.Workplane, 
         face_type: Literal['interior', 'exterior'],
         snap_tolerance: Optional[float] = None,
-        use_cache: bool = True
     ):
-        type_groups = CQLinq.groupByTypes(workplane, only_faces=True)
+        type_groups = CQLinq.groupByTypes(workplane, only_faces=True, check_splits=False)
+        if False:
+            yield None
         dir = "away" if face_type == "interior" else "towards"
         face_edge_groups: dict[cq.Edge, set[cq.Face]] = {}
 
@@ -51,27 +52,26 @@ class Split:
             edge_vec = cq.Vector(edge.endPoint().toTuple()) - cq.Vector(edge.startPoint().toTuple())
             is_parallel = edge_vec.dot(average_normal) == 0
             if is_parallel:
-                yield Split.from_edge(workplane, edge, average_normal, dir, snap_tolerance, use_cache)
+                yield Split.from_edge(workplane, edge, average_normal, dir, snap_tolerance)
 
 
     @staticmethod
     def from_anchor(
         workplane: cq.Workplane, 
         anchor: Union[list[VectorTuple], VectorTuple] = (0,0,0), 
-        dir: Union[list[VectorTuple], VectorTuple] = (0,0,0),
+        angle: Union[list[VectorTuple], VectorTuple] = (0,0,0),
         snap_tolerance: Optional[float] = None,
         until: Literal["next", "all"] = "next",
-        use_cache: bool = True
     ):
         anchors = [anchor] if isinstance(anchor, tuple) else anchor
-        dirs = [dir] if isinstance(dir, tuple) else dir
-        assert len(anchors) == len(dirs), "anchors and dirs must be the same length"
+        angles = [angle] if isinstance(angle, tuple) else angle
+        assert len(anchors) == len(angles), "anchors and dirs must be the same length"
 
         edges = []
-        for anchor, dir in zip(anchors, dirs):
-            split_face = Split.from_plane(anchor, dir)
+        for anchor, angle in zip(anchors, angles):
+            split_face = Split.from_plane(anchor, angle)
             if until == "next":
-                intersect_vertex = CQExtensions.split_intersect(workplane, anchor, split_face, snap_tolerance, use_cache)
+                intersect_vertex = CQExtensions.split_intersect(workplane, anchor, split_face, snap_tolerance)
                 edges.append((anchor, intersect_vertex.toTuple())) # type: ignore
             else:
                 edges.append(split_face)
@@ -88,7 +88,6 @@ class Split:
         axis: Union[Literal["X", "Y", "Z"], VectorTuple, cq.Vector] = "Z",
         dir: Literal["away", "towards", "both"] = "both",
         snap_tolerance: Optional[float] = None,
-        use_cache: bool = True
     ):
         scaled_edge = CQExtensions.scale(edge, z=10)
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
@@ -106,12 +105,11 @@ class Split:
         ]))
 
         if snap_tolerance:
-            intersect_vertex = CQExtensions.split_intersect(workplane, edge.startPoint(), split_face, snap_tolerance, use_cache)
+            intersect_vertex = CQExtensions.split_intersect(workplane, edge.startPoint(), split_face, snap_tolerance)
             assert intersect_vertex, "No intersection found"
             intersect_vec = cq.Vector(intersect_vertex.toTuple()) - cq.Vector(edge.startPoint().toTuple())
             intersect_vec_norm = intersect_vec/intersect_vec.Length
             return Split.from_edge(workplane, edge, intersect_vec_norm, "towards")
-
         return split_face
 
     @staticmethod
@@ -121,8 +119,13 @@ class Split:
         axis: Union[Literal["X", "Y", "Z"], VectorTuple] = "Z",
         dir: Literal["away", "towards", "both"] = "both",
     ):
-        
-        edges_pnts = np.array([norm_line_tuple(lines), norm_line_tuple(lines)] if isinstance(lines, tuple) else [norm_line_tuple(line) for line in lines])
+        if isinstance(lines, tuple):
+            edges_pnts = np.array([norm_line_tuple(lines), norm_line_tuple(lines)])
+        elif isinstance(lines, list) and len(lines) == 1:
+            edges_pnts = np.array([norm_line_tuple(lines[0]), norm_line_tuple(lines[0])])
+
+        else: 
+            edges_pnts = [norm_line_tuple(line) for line in lines]
         maxDim = workplane.findSolid().BoundingBox().DiagonalLength * 10.0
         normal_vector = np.array(get_normal_from_axis(axis).toTuple())
 
@@ -144,9 +147,11 @@ def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face], use_cach
     if use_cache and cache_exists:
         shape = CQCache.import_brep(cache_file_name)
     else:
+        print("Cache does not exist")
         for split in splits:      
             workplane = workplane.split(split)
         shape = CQExtensions.fuse_shapes(workplane.vals())
         if use_cache:
             CQCache.export_brep(shape, cache_file_name)
+        print("cache finished")
     return cq.Workplane(shape)
