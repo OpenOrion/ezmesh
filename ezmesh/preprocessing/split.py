@@ -4,7 +4,7 @@ from cadquery.cq import VectorLike
 from typing import Literal, Optional, Sequence, Union
 from ezmesh.utils.cq import CQCache, CQExtensions, CQLinq
 from ezmesh.utils.types import LineTuple, VectorTuple
-
+from jupyter_cadquery import show
 Axis = Union[Literal["X", "Y", "Z"], VectorTuple, cq.Vector]
 def get_normal_from_axis(axis: Axis):
     if isinstance(axis, str):
@@ -22,7 +22,7 @@ class Split:
     @staticmethod
     def from_plane(
         base_pnt: VectorLike = (0,0,0), 
-        angle: VectorTuple = (0,0,1), 
+        angle: VectorTuple = (0,0,0), 
     ):
         return cq.Face.makePlane(None, None, base_pnt, tuple(np.radians(angle)))
 
@@ -31,7 +31,9 @@ class Split:
         workplane: cq.Workplane, 
         face_type: Literal['interior', 'exterior'],
         snap_tolerance: Optional[float] = None,
+        angle_offset: VectorTuple = (0,0,0),
     ):
+        offset = cq.Vector(tuple(np.radians(angle_offset)))
         type_groups = CQLinq.groupByTypes(workplane, only_faces=True, check_splits=False)
         if False:
             yield None
@@ -48,11 +50,12 @@ class Split:
                 face_edge_groups[edge].add(face)
 
         for edge, faces in face_edge_groups.items():
-            average_normal = cq.Vector(tuple(np.average([face.normalAt().toTuple() for face in faces], axis=0)))
+            average_normal = np.average([face.normalAt().toTuple() for face in faces], axis=0)
+            average_normal_vec = cq.Vector(tuple(average_normal)) + offset
             edge_vec = cq.Vector(edge.endPoint().toTuple()) - cq.Vector(edge.startPoint().toTuple())
-            is_parallel = edge_vec.dot(average_normal) == 0
+            is_parallel = edge_vec.dot(average_normal_vec) == 0
             if is_parallel:
-                yield Split.from_edge(workplane, edge, average_normal, dir, snap_tolerance)
+                yield Split.from_edge(workplane, edge, average_normal_vec, dir, snap_tolerance)
 
 
     @staticmethod
@@ -104,6 +107,7 @@ class Split:
             cq.Edge.makeLine(max_dim_edge.startPoint(), min_dim_edge.startPoint()),
         ]))
 
+        # TODO: for some reason this snap tolerance is not working
         if snap_tolerance:
             intersect_vertex = CQExtensions.split_intersect(workplane, edge.startPoint(), split_face, snap_tolerance)
             assert intersect_vertex, "No intersection found"
@@ -147,11 +151,9 @@ def split_workplane(workplane: cq.Workplane, splits: Sequence[cq.Face], use_cach
     if use_cache and cache_exists:
         shape = CQCache.import_brep(cache_file_name)
     else:
-        print("Cache does not exist")
         for split in splits:      
             workplane = workplane.split(split)
         shape = CQExtensions.fuse_shapes(workplane.vals())
         if use_cache:
             CQCache.export_brep(shape, cache_file_name)
-        print("cache finished")
     return cq.Workplane(shape)

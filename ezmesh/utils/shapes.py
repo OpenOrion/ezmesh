@@ -17,7 +17,7 @@ def generate_circle(r, num_points=100):
     y = r * np.sin(theta)
     return np.column_stack((x, y))
 
-def generate_naca4_airfoil(naca_string: str, num_points: int = 100) -> npt.NDArray[np.float64]:
+def generate_naca4_airfoil(naca_string: str, num_points: int = 100, use_cosine_sampling=True) -> npt.NDArray[np.float64]:
 
     """generates NACA4 coordinates
 
@@ -35,9 +35,11 @@ def generate_naca4_airfoil(naca_string: str, num_points: int = 100) -> npt.NDArr
     XX = int(naca_string[2:]) / 100
 
     # camber line
-    beta = np.linspace(0.0,np.pi, num_points)
-    xc = 0.5*(1.0-np.cos(beta))
-
+    if use_cosine_sampling:
+        beta = np.linspace(0.0,np.pi, num_points)
+        xc = 0.5*(1.0-np.cos(beta))
+    else:
+        xc = np.linspace(0.0, 1.0, num_points)
     # thickness distribution from camber line
     a0 = 0.2969
     a1 = -0.1260

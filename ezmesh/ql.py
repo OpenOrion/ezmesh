@@ -183,7 +183,7 @@ class GeometryQL:
 
         return self
 
-    def setTransfiniteFace(self, arrangement: TransfiniteArrangementType = "Left", corner_indexes: Sequence[int] = []):
+    def setTransfiniteFace(self, arrangement: TransfiniteArrangementType = "Left"):
         self.is_structured = True    
         cq_face_batch = CQLinq.select_batch(self._workplane, "solid", "face")
         for i, cq_faces in enumerate(cq_face_batch):
@@ -200,15 +200,20 @@ class GeometryQL:
         self._ctx.add_transactions(set_transfinite_solids)
         return self
 
-    def _setTransfiniteFaceAuto(self, cq_faces: Sequence[cq.Face], num_nodes: int):
+    def _setTransfiniteFaceAuto(
+        self, 
+        cq_faces: Sequence[cq.Face], 
+        num_nodes: int, 
+        arrangement: TransfiniteArrangementType = "Left"
+    ):
         self.is_structured = True    
         edge_transactions = []
         for cq_face in cq_faces:
             face = self._entity_ctx.select(cq_face)
-            set_transfinite_face = SetTransfiniteFace(face)
+            set_transfinite_face = SetTransfiniteFace(face, arrangement)
             self._ctx.add_transaction(set_transfinite_face)
-            for cq_edge in cq_face.Edges():
-                edge = self._entity_ctx.select(cq_edge)
+            for path in CQLinq.sort(cq_face.Edges()):
+                edge = self._entity_ctx.select(path.edge)
                 set_transfinite_edge = SetTransfiniteEdge(edge, num_nodes)
                 edge_transactions.append(set_transfinite_edge)
         self._ctx.add_transactions(edge_transactions, ignore_duplicates=True)
