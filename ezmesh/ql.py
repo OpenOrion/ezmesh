@@ -40,7 +40,7 @@ class GeometryQL:
             self._workplane = self._workplane.end(num)
         return self
 
-    def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], splits: Optional[Callable[[cq.Workplane], Sequence[cq.Face]]] = None, use_cache: bool = True):
+    def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], splits: Optional[Callable[[cq.Workplane], Sequence[cq.Face]]] = None, use_cache: bool = False):
         assert self._workplane is None, "Workplane is already loaded."
 
         split_preprocessing = (lambda workplane: split_workplane(workplane, splits(workplane), use_cache)) if splits else None        
@@ -207,31 +207,78 @@ class GeometryQL:
         arrangement: TransfiniteArrangementType = "Left"
     ):
         self.is_structured = True    
-        edge_transactions = []
+        total_area = 0.0
         for cq_face in cq_faces:
+            total_area += cq_face.Area()
+
+        transfinite_groups = []
+
+
+        for cq_face in cq_faces:
+            # face_num_nodes = num_nodes
+            face_num_nodes = int(np.ceil((cq_face.Area()*num_nodes)/total_area))
+            assert face_num_nodes > 0, "face_num_nodes must be greater than 0, make num_nodes higher"
             face = self._entity_ctx.select(cq_face)
             set_transfinite_face = SetTransfiniteFace(face, arrangement)
             self._ctx.add_transaction(set_transfinite_face)
-            for path in CQLinq.sort(cq_face.Edges()):
+            
+            sorted_edges = CQLinq.sort(cq_face.Edges())
+            for i, path in enumerate(sorted_edges):
                 edge = self._entity_ctx.select(path.edge)
-                set_transfinite_edge = SetTransfiniteEdge(edge, num_nodes)
-                edge_transactions.append(set_transfinite_edge)
-        self._ctx.add_transactions(edge_transactions, ignore_duplicates=True)
+                parllel_edge_index = (i+2 if i+2 < len(sorted_edges) else (i+2) - len(sorted_edges))
+                parllel_edge = self._entity_ctx.select(sorted_edges[parllel_edge_index].edge)
+                
+                found_group: Optional[set] = None
+                for i, group in enumerate(transfinite_groups):
+                    if not found_group:
+                        if edge in group:
+                            group.add(parllel_edge)
+                            found_group = group
+                        elif parllel_edge in group:
+                            group.add(edge)
+                            found_group = group
+                    else: 
+                        if edge in group or parllel_edge in group:
+                            found_group.update(group)
+                            transfinite_groups.remove(group)
+                        # transfinite_groups.pop(i)
+
+                if found_group is None:
+                    transfinite_groups.append(set([edge, parllel_edge]))
+                    
+        for i, transfinite_group in enumerate(transfinite_groups):
+            for edge in transfinite_group:
+                for j, group in enumerate(transfinite_groups):
+                    if i != j and edge in group:
+                        print("Found edge in multiple groups")
+            set_transfinite_edges = [SetTransfiniteEdge(edge, num_nodes + i) for edge in transfinite_group]
+            self._ctx.add_transactions(set_transfinite_edges)
 
 
-    def setTransfiniteAuto(self, num_nodes: int):
+    def setTransfiniteAuto(
+        self,
+        num_nodes: int,
+        auto_recombine: bool = True
+    ):
         self.is_structured = True
         if CQExtensions.get_dimension(self._workplane) == 2:
-            cq_faces = cast(Sequence[cq.Face], CQLinq.select(self._workplane, "face"))
+            cq_faces = cast(Sequence[cq.Face], list(CQLinq.select(self._workplane, "face")))
             self._setTransfiniteFaceAuto(cq_faces, num_nodes)
+
         else:
             for cq_solid in cast(Sequence[cq.Solid], CQLinq.select(self._workplane, "solid")):
                 solid = self._entity_ctx.select(cq_solid)
                 set_transfinite_solid = SetTransfiniteSolid(solid)
-                self._setTransfiniteFaceAuto(cq_solid.Faces(), num_nodes)
                 self._ctx.add_transaction(set_transfinite_solid)
+            cq_faces = cast(Sequence[cq.Face], list(CQLinq.select(self._workplane, "face")))
+            self._setTransfiniteFaceAuto(cq_faces, num_nodes)
+
         # transfinite_auto = SetTransfiniteAuto()
         # self._ctx.add_transaction(transfinite_auto)
+
+
+        if auto_recombine:
+            self.recombine()
 
         return self
 
@@ -260,7 +307,7 @@ class GeometryQL:
                 transaction.num_elems = num_elems
                 transaction.coef = -ratio
 
-    def addBoundaryLayer(self, ratio: float = 1, size: Optional[float] = None, num_layers: Optional[int] = None):
+    def addBoundaryLayer(self, ratio: float = 1, size: Optional[float] = None, num_layers: Optional[int] = None, auto_recombine: bool = True):
         if self.is_structured:
             self._addStructuredBoundaryLayer(self._workplane.vals(), ratio, size, num_layers)
         else:
@@ -269,6 +316,8 @@ class GeometryQL:
                 boundary_layer = UnstructuredBoundaryLayer2D(self.vals(), ratio, size, num_layers)
             else:
                 boundary_layer = UnstructuredBoundaryLayer(self.vals(), ratio, size, num_layers)
+                if auto_recombine:
+                    self.recombine()
             self._ctx.add_transaction(boundary_layer)
         return self
 
@@ -286,16 +335,18 @@ class GeometryQL:
             gmsh.write(filename)
         return self
 
-    def show(self, type: Literal["fltk", "mesh", "cq", "plot"] = "cq", only_markers: bool = False):
-        if type == "fltk":
+    def show(self, type: Literal["gmsh", "mesh", "cq", "plot"] = "cq", only_markers: bool = False):
+        if type == "gmsh":
             gmsh.fltk.run()
         elif type == "mesh":
             assert self._ctx.mesh is not None, "Mesh is not generated yet."
             visualize_mesh(self._ctx.mesh, only_markers=only_markers)
         elif type == "plot":
             CQExtensions.plot_cq(self._workplane, ctx=self._entity_ctx)
-        else:
+        elif type == "cq":
             show(self._workplane, theme="dark")
+        else:
+            raise NotImplementedError(f"Unknown show type {type}")
         return self
 
 

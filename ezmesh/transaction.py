@@ -54,6 +54,7 @@ class TransactionContext:
         else:
             return self.entity_transactions.get((transaction_type, entity))
 
+
     def add_transaction(self, transaction: Transaction, ignore_duplicates: bool = False):
         """
         transaction: Transaction - transaction to be added
@@ -91,9 +92,6 @@ class TransactionContext:
         for transaction in transactions:
             transaction.before_gen()
 
-        # gmsh.write("test.geo_unrolled")
-        # gmsh.fltk.run()
-
         gmsh.model.mesh.generate(dim)
 
         for transaction in transactions:
@@ -101,4 +99,4 @@ class TransactionContext:
         
         self.entity_transactions = OrderedDict()
         self.system_transactions = OrderedDict()
-        self.mesh = import_from_gmsh()
+        # self.mesh = import_from_gmsh()

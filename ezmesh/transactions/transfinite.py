@@ -52,11 +52,11 @@ class SetTransfiniteEdge(SingleEntityTransaction):
 
     def __post_init__(self):
         super().__post_init__()
-        self.num_nodes = self.num_elems + 1
 
     def before_gen(self):
         assert self.entity.type == "edge", "SetTransfiniteEdge only accepts edges"
-        gmsh.model.mesh.setTransfiniteCurve(self.entity.tag, self.num_nodes, self.mesh_type, self.coef)
+        num_nodes = self.num_elems + 1
+        gmsh.model.mesh.setTransfiniteCurve(self.entity.tag, num_nodes, self.mesh_type, self.coef)
 
 
 

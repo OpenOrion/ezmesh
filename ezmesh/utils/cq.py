@@ -138,9 +138,7 @@ class CQLinq:
 
     @staticmethod
     def sort(target: Union[cq.Edge, Sequence[cq.Edge]]):
-        objs = [target] if isinstance(target, cq.Edge) else target
-
-        unsorted_cq_edges = cast(Sequence[cq.Edge], list(CQLinq.select(objs, "edge")))
+        unsorted_cq_edges = [target] if isinstance(target, cq.Edge) else target
         cq_edges = list(unsorted_cq_edges[1:])
         sorted_paths = [DirectedPath(unsorted_cq_edges[0])]
         while cq_edges:
@@ -158,6 +156,7 @@ class CQLinq:
                     sorted_paths.insert(0, DirectedPath(cq_edge, direction=-1))
                     cq_edges.pop(i)
                     break
+    
             else:
                 raise ValueError("Edges do not form a closed loop")
         
@@ -428,6 +427,12 @@ class CQCache:
         if CACHE_DIR_NAME not in os.listdir(TEMPDIR_PATH):
             os.mkdir(CACHE_DIR_PATH)
         shape.exportBrep(file_path)
+
+    @staticmethod
+    def clear_cache():
+        if CACHE_DIR_NAME in os.listdir(TEMPDIR_PATH):
+            for file in os.listdir(CACHE_DIR_PATH):
+                os.remove(os.path.join(CACHE_DIR_PATH, file))
 
 
 
