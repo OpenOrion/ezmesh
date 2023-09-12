@@ -1,12 +1,12 @@
 import gmsh
+import numpy as np
 import cadquery as cq
 from cadquery.cq import CQObject
 from typing import Callable, Iterable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
-import numpy as np
 from ezmesh.entity import CQEntityContext, Entity
 from ezmesh.preprocessing.split import split_workplane
-from ezmesh.transaction import TransactionContext
+from ezmesh.transaction import Transaction, TransactionContext
 from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm2D
 from ezmesh.transactions.boundary_layer import UnstructuredBoundaryLayer, UnstructuredBoundaryLayer2D, get_boundary_ratio
 from ezmesh.transactions.physical_group import SetPhysicalGroup
@@ -284,6 +284,10 @@ class GeometryQL:
             set_transfinite_edges = [SetTransfiniteEdge(edge, group_max_num_nodes) for edge in group_edges]
             self._ctx.add_transactions(set_transfinite_edges)
 
+
+    def addTransaction(self, toTransaction: Callable[["GeometryQL"], Transaction]):
+        self._ctx.add_transaction(toTransaction(self))
+        return self
 
     def setTransfiniteAuto(
         self,
