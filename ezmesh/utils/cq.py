@@ -165,8 +165,10 @@ class CQLinq:
     
 
     @staticmethod
-    def groupByTypes(target: Union[cq.Workplane, Sequence[CQObject]], only_faces=False, check_splits: bool = True): 
+    def groupByTypes(target: Union[cq.Workplane, Sequence[CQObject]], only_faces=False, check_splits: bool = True, exclude_split: bool = False): 
         workplane = target if isinstance(target, cq.Workplane) else cq.Workplane().add(target)
+        assert CQExtensions.get_dimension(workplane) == 3, "workplane must be 3D"
+
         add_wire_to_group = lambda wires, group: group.update([
             *wires,
             *CQLinq.select(wires, "edge"),
@@ -179,23 +181,30 @@ class CQLinq:
             "exterior": OrderedSet[CQObject](),
         }
         faces = list(CQLinq.select(target, "face"))
-        is_2d = isinstance(workplane.val(), cq.Face)
-        if is_2d:
-            first_face = cast(cq.Face, faces[0])
-            add_wire_to_group(first_face.innerWires(), groups["interior"])
-            add_wire_to_group([first_face.outerWire()], groups["exterior"])
-        else:
-            for face in faces:
-                assert isinstance(face, cq.Face), "object must be a face"
-                split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5))) if check_splits else False
-                is_interior = CQExtensions.is_interior_face(face) 
-                if split_intersect:
-                    face_registry = groups["split"]
-                else:
-                    face_registry = groups["interior" if is_interior else "exterior"]
-                face_registry.add(face)
-                if not only_faces:
-                    add_wire_to_group(face.Wires(), face_registry)
+        for face in faces:
+            assert isinstance(face, cq.Face), "object must be a face"
+            split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5))) if check_splits else False
+            is_interior = CQExtensions.is_interior_face(face) 
+            if split_intersect:
+                face_registry = groups["split"]
+            else:
+                face_registry = groups["interior" if is_interior else "exterior"]
+            face_registry.add(face)
+            if not only_faces:
+                add_wire_to_group(face.Wires(), face_registry)
+
+        if exclude_split:
+            new_exterior = OrderedSet[CQObject]()
+            for obj in groups["exterior"]:
+                if obj not in groups["split"]:
+                    new_exterior.add(obj)
+            groups["exterior"] = new_exterior
+
+            new_interior = OrderedSet[CQObject]()
+            for obj in groups["interior"]:
+                if obj not in groups["split"]:
+                    new_interior.add(obj)
+            groups["interior"] = new_interior
 
         return groups
 
@@ -332,10 +341,7 @@ class CQExtensions:
         return 2 if len(workplane.solids().vals()) == 0 else 3
 
     @staticmethod
-    def import_workplane(
-        target: Union[cq.Workplane, str, Iterable[CQObject]], 
-        preprocess_workplane: Optional[Callable[[cq.Workplane], cq.Workplane]] = None
-    ):
+    def import_workplane(target: Union[cq.Workplane, str, Iterable[CQObject]]):
         if isinstance(target, str):
             if target.lower().endswith(".step"):
                 workplane = cq.importers.importStep(target)
@@ -347,19 +353,6 @@ class CQExtensions:
             workplane = cq.Workplane().newObject(target)
         else:
             workplane = target
-
-        if CQExtensions.get_dimension(workplane) == 2:
-            # extrude down to get a solid for preprocessing (i.e splits for now)
-            workplane = workplane.extrude(-1)
-            if preprocess_workplane:
-                workplane = preprocess_workplane(workplane)
-            # fuses top faces to appear as one Compound in GMSH
-            faces = cast(Sequence[cq.Face], workplane.faces(">Z").vals())
-            fused_face = CQExtensions.fuse_shapes(faces)
-            workplane = cq.Workplane(fused_face)
-        elif preprocess_workplane:
-            workplane = preprocess_workplane(workplane)
-
 
         return workplane
 

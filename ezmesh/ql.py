@@ -43,15 +43,32 @@ class GeometryQL:
     def load(self, target: Union[cq.Workplane, str, Iterable[CQObject]], splits: Optional[Callable[[cq.Workplane], Sequence[cq.Face]]] = None, use_cache: bool = False):
         assert self._workplane is None, "Workplane is already loaded."
 
-        split_preprocessing = (lambda workplane: split_workplane(workplane, splits(workplane), use_cache)) if splits else None        
-        self._workplane = self._initial_workplane = CQExtensions.import_workplane(target, split_preprocessing)
+        workplane = self._initial_workplane = CQExtensions.import_workplane(target)
+        is_2d = CQExtensions.get_dimension(workplane) == 2
 
+        # extrudes 2D shapes to 3D
+        if is_2d:
+            workplane = workplane.extrude(-1)
+
+        if splits:
+            workplane = split_workplane(workplane, splits(workplane), use_cache)
+
+        self._type_groups = CQLinq.groupByTypes(workplane, exclude_split=is_2d)
+
+        if is_2d:
+            # fuses top faces to appear as one Compound in GMSH
+            faces = cast(Sequence[cq.Face], workplane.faces(">Z").vals())
+            fused_face = CQExtensions.fuse_shapes(faces)
+            self._initial_workplane = cq.Workplane(fused_face)
+        else:
+            self._initial_workplane = workplane
+        
+        self._workplane = self._initial_workplane
         topods = self._workplane.toOCC()
         gmsh.model.occ.importShapesNativePointer(topods._address())
         gmsh.model.occ.synchronize()
 
         self._entity_ctx = CQEntityContext(self._workplane)
-        self._type_groups = CQLinq.groupByTypes(self._workplane)
 
         self._tag_workplane()
 
@@ -299,30 +316,35 @@ class GeometryQL:
     def _addStructuredBoundaryLayer(
             self, 
             cq_objs: Sequence[CQObject], 
-            # ratio: Optional[float] = None, 
-            size: Optional[float] = None, 
+            size: Optional[float] = None,
+            ratio: Optional[float] = None,
         ):
         assert self.is_structured, "Structured boundary layer can only be applied after setTransfiniteAuto"
+        assert (size is None) != (ratio is None), "Either size or ratio must be specified, not both"
 
         boundary_vertices =  list(CQLinq.select(cq_objs, "vertex"))
 
         for (cq_edge, edge) in self._entity_ctx.entity_registries["edge"].items():
             transaction = cast(SetTransfiniteEdge, self._ctx.get_transaction(SetTransfiniteEdge, edge))
             assert edge.type == "edge", "StructuredBoundaryLayer only accepts edges"
-            ratio = get_boundary_ratio(cq_edge.Length(), size, transaction.num_elems) # type: ignore
+            if size:
+                edge_ratio = get_boundary_ratio(cq_edge.Length(), size, transaction.num_elems) # type: ignore
+            elif ratio:
+                edge_ratio = ratio
+            else:
+                raise ValueError("Either size or ratio must be specified, not both")
             cq_curr_edge_vertices =  cq_edge.Vertices() # type: ignore
             if cq_curr_edge_vertices[0] in boundary_vertices and cq_curr_edge_vertices[-1] not in boundary_vertices:
-                # transaction.num_elems = num_elems
-                transaction.coef = ratio
+                transaction.coef = edge_ratio
 
             elif cq_curr_edge_vertices[-1] in boundary_vertices and cq_curr_edge_vertices[0] not in boundary_vertices:
-                # transaction.num_elems = num_elems
-                transaction.coef = -ratio
+                transaction.coef = -edge_ratio
 
-    def addBoundaryLayer(self, size: float, ratio: float = 1, num_layers: Optional[int] = None, auto_recombine: bool = True):
+    def addBoundaryLayer(self, size: float, ratio: Optional[float] = None, num_layers: Optional[int] = None, auto_recombine: bool = True):
         if self.is_structured:
-            self._addStructuredBoundaryLayer(self._workplane.vals(), size)
+            self._addStructuredBoundaryLayer(self._workplane.vals(), size, ratio)
         else:
+            ratio = ratio or 1.0
             assert num_layers is not None and size is not None and ratio is not None, "num_layers, hwall_n and ratio must be specified for unstructured boundary layer"
             if CQ_TYPE_RANKING[type(self._workplane.val())] < CQ_TYPE_RANKING[cq.Face]:
                 boundary_layer = UnstructuredBoundaryLayer2D(self.vals(), ratio, size, num_layers)
