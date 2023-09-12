@@ -5,7 +5,6 @@ import numpy as np
 from ezmesh.entity import ENTITY_DIM_MAPPING, Entity
 from ezmesh.transaction import MultiEntityTransaction
 from ezmesh.utils.types import OrderedSet
-
 def get_boundary_sizes(ratio: float, size: float, num_layers: int):
     sizes = [size]
     for i in range(1, num_layers): 
@@ -13,14 +12,11 @@ def get_boundary_sizes(ratio: float, size: float, num_layers: int):
         sizes.append(sizes[-1] + sizes[0] * ratio**i)
     return sizes
 
-def get_boundary_num_layers(length: float, ratio: float, normal_height: Optional[float] = None, num_layers: Optional[int] = None):
-    if num_layers is None:
-        assert normal_height is not None, "hwall_n must be specified if num_layers is not specified"
-        return np.log((normal_height + length*ratio - length)/normal_height)/np.log(ratio)
-    else:
-        return num_layers
-
-
+def get_boundary_ratio(length: float, normal_height: float, num_layers: int):
+    # sympy solve for an = a1*(r)**(n - 1)
+    # solve([(normal_height*(ratio)**(num_layers - 1)) - length], [r], dict=True)
+    return (length/normal_height)**(1/(num_layers - 1))
+    
 @dataclass(eq=False)
 class UnstructuredBoundaryLayer(MultiEntityTransaction):
     "geometric series boundary layer for unstructured meshes"

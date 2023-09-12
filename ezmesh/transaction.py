@@ -83,7 +83,7 @@ class TransactionContext:
         for transaction in transactions:
             self.add_transaction(transaction, ignore_duplicates)
 
-    def commit(self, dim: int = 3):
+    def generate(self, dim: int = 3):
         gmsh.model.occ.synchronize()
         transactions = OrderedSet([
             *self.entity_transactions.values(),

@@ -216,6 +216,8 @@ class CQLinq:
         return groups
 
 
+
+
     @staticmethod
     def find(target: Union[cq.Workplane, Iterable[CQObject]], where: Callable[[CQObject], bool]):
         cq_objs = target.vals() if isinstance(target, cq.Workplane) else (target if isinstance(target, Iterable) else [target])
