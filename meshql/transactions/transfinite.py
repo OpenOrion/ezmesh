@@ -2,9 +2,9 @@ import gmsh
 import numpy as np
 from dataclasses import dataclass
 from typing import Literal, Optional, Sequence
-from ezmesh.entity import Entity, ENTITY_DIM_MAPPING
-from ezmesh.transaction import SingleEntityTransaction, MultiEntityTransaction, Transaction
-from ezmesh.utils.types import OrderedSet
+from meshql.entity import Entity, ENTITY_DIM_MAPPING
+from meshql.transaction import SingleEntityTransaction, MultiEntityTransaction, Transaction
+from meshql.utils.types import OrderedSet
 
 TransfiniteArrangementType = Literal["Left", "Right", "AlternateLeft", "AlternateRight"]
 TransfiniteMeshType = Literal["Progression", "Bump", "Beta"]

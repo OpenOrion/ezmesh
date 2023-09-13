@@ -1,6 +1,6 @@
 
-from ezmesh.entity import ENTITY_DIM_MAPPING
-from ezmesh.utils.types import NumpyFloat
+from meshql.entity import ENTITY_DIM_MAPPING
+from meshql.utils.types import NumpyFloat
 from .mesh import ElementType, Mesh
 import numpy.typing as npt
 import numpy as np

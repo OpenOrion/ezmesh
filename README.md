@@ -1,4 +1,4 @@
-<h1 align="center">🕸️ ezmesh</h1>
+<h1 align="center">🕸️ meshql</h1>
 
 <p align="center">the open source parametric CFD mesh generator</p>
 
@@ -16,29 +16,29 @@
 
 
 # About
-ezmesh is a declarative tool that parametrically generates meshes compliant with a variety of mesh formats with easy and configurable API on top of GMSH.
+meshql is a declarative tool that parametrically generates meshes compliant with a variety of mesh formats with easy and configurable API on top of GMSH.
 
 
 # Install
 ## Latest
 ```
-pip install git+https://github.com/Turbodesigner/ezmesh.git#egg=ezmesh
+pip install git+https://github.com/Turbodesigner/meshql.git#egg=meshql
 ```
 
 ## Other Versions
 ```
 # Version 2
-pip install git+https://github.com/Turbodesigner/ezmesh.git@2.0.0#egg=ezmesh
+pip install git+https://github.com/Turbodesigner/meshql.git@2.0.0#egg=meshql
 
 # Version 1
-pip install git+https://github.com/Turbodesigner/ezmesh.git@1.0.0#egg=ezmesh
+pip install git+https://github.com/Turbodesigner/meshql.git@1.0.0#egg=meshql
 ```
 
 # Example
 See more examples in [examples](/examples) directory
 ## Inviscid Wedge
 ```python
-from ezmesh import CurveLoop, PlaneSurface, TransfiniteSurfaceField, TransfiniteCurveField, Geometry, visualize_mesh
+from meshql import CurveLoop, PlaneSurface, TransfiniteSurfaceField, TransfiniteCurveField, Geometry, visualize_mesh
 import numpy as np
 
 with Geometry() as geo:
@@ -69,8 +69,8 @@ with Geometry() as geo:
 
 ## Visualize Mesh
 ```python
-from ezmesh import import_from_file
-from ezmesh import visualize_mesh
+from meshql import import_from_file
+from meshql import visualize_mesh
 mesh = import_from_file("mesh_wedge_inv.su2")
 visualize_mesh(mesh)
 ```
@@ -79,8 +79,8 @@ visualize_mesh(mesh)
 
 # Developement Setup
 ```
-git clone https://github.com/Turbodesigner/ezmesh.git
-cd ezmesh
+git clone https://github.com/Turbodesigner/meshql.git
+cd meshql
 pip install -r requirements_dev.txt
 ```
 

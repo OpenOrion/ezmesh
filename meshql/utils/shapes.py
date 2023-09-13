@@ -1,5 +1,5 @@
 from typing import Sequence
-from ezmesh.utils.types import Number
+from meshql.utils.types import Number
 import numpy as np
 import numpy.typing as npt
 

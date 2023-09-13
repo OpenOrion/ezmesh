@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Sequence
 import numpy.typing as npt
 import numpy as np
-from ezmesh.utils.types import NumpyFloat
+from meshql.utils.types import NumpyFloat
 
 class ElementType(Enum):
     LINE = 1

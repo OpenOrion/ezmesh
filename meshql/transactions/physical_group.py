@@ -1,8 +1,8 @@
 import gmsh
 from dataclasses import dataclass
-from ezmesh.entity import Entity
-from ezmesh.transaction import MultiEntityTransaction
-from ezmesh.utils.types import OrderedSet
+from meshql.entity import Entity
+from meshql.transaction import MultiEntityTransaction
+from meshql.utils.types import OrderedSet
 
 
 @dataclass(eq=False)

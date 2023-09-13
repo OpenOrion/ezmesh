@@ -2,9 +2,9 @@ import gmsh
 from dataclasses import dataclass
 from typing import Optional
 import numpy as np
-from ezmesh.entity import ENTITY_DIM_MAPPING, Entity
-from ezmesh.transaction import MultiEntityTransaction
-from ezmesh.utils.types import OrderedSet
+from meshql.entity import ENTITY_DIM_MAPPING, Entity
+from meshql.transaction import MultiEntityTransaction
+from meshql.utils.types import OrderedSet
 def get_boundary_sizes(ratio: float, size: float, num_layers: int):
     sizes = [size]
     for i in range(1, num_layers): 

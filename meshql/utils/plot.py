@@ -2,7 +2,7 @@ import numpy as np
 import numpy.typing as npt
 from typing import Sequence, Union
 from plotly import graph_objects as go
-from ezmesh.utils.types import NumpyFloat
+from meshql.utils.types import NumpyFloat
 
 def add_plot(coords: npt.NDArray[NumpyFloat], fig: go.Figure=go.Figure(), label: str="Plot"):
     dim = 3 if np.all(coords[:,2]) else 2

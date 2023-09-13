@@ -3,8 +3,8 @@ import cadquery as cq
 from cadquery.cq import CQObject
 from dataclasses import dataclass
 from typing import Iterable, Optional, OrderedDict, Sequence, Union, cast
-from ezmesh.utils.cq import CQLinq, CQType, CQ_TYPE_STR_MAPPING
-from ezmesh.utils.types import OrderedSet
+from meshql.utils.cq import CQLinq, CQType, CQ_TYPE_STR_MAPPING
+from meshql.utils.types import OrderedSet
 
 
 ENTITY_DIM_MAPPING: dict[CQType, int] = {

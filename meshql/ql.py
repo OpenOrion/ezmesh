@@ -4,18 +4,18 @@ import cadquery as cq
 from cadquery.cq import CQObject
 from typing import Callable, Iterable, Literal, Optional, Sequence, Union, cast
 from cadquery.selectors import Selector
-from ezmesh.entity import CQEntityContext, Entity
-from ezmesh.preprocessing.split import split_workplane
-from ezmesh.transaction import Transaction, TransactionContext
-from ezmesh.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm2D
-from ezmesh.transactions.boundary_layer import UnstructuredBoundaryLayer, UnstructuredBoundaryLayer2D, get_boundary_ratio
-from ezmesh.transactions.physical_group import SetPhysicalGroup
-from ezmesh.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
-from ezmesh.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType
-from ezmesh.mesh.exporters import export_to_su2
-from ezmesh.utils.cq import CQ_TYPE_RANKING, CQ_TYPE_STR_MAPPING, CQExtensions, CQGroupTypeString, CQLinq, CQType
-from ezmesh.utils.types import OrderedSet
-from ezmesh.visualizer import visualize_mesh
+from meshql.entity import CQEntityContext, Entity
+from meshql.preprocessing.split import split_workplane
+from meshql.transaction import Transaction, TransactionContext
+from meshql.transactions.algorithm import MeshAlgorithm2DType, SetMeshAlgorithm2D
+from meshql.transactions.boundary_layer import UnstructuredBoundaryLayer, UnstructuredBoundaryLayer2D, get_boundary_ratio
+from meshql.transactions.physical_group import SetPhysicalGroup
+from meshql.transactions.refinement import Recombine, Refine, SetMeshSize, SetSmoothing
+from meshql.transactions.transfinite import SetTransfiniteEdge, SetTransfiniteFace, SetTransfiniteSolid, TransfiniteArrangementType, TransfiniteMeshType
+from meshql.mesh.exporters import export_to_su2
+from meshql.utils.cq import CQ_TYPE_RANKING, CQ_TYPE_STR_MAPPING, CQExtensions, CQGroupTypeString, CQLinq, CQType
+from meshql.utils.types import OrderedSet
+from meshql.visualizer import visualize_mesh
 from jupyter_cadquery import show
 
 class GeometryQL:
@@ -25,7 +25,7 @@ class GeometryQL:
         self._initial_workplane = self._workplane = None # type: ignore
         self._ctx = TransactionContext()
         self.is_structured = False
-        self._transfinite_edge_groups = list[set[cq.Edge]]
+        self._transfinite_edge_groups = list[set[cq.Edge]]()
     def __enter__(self):
         gmsh.initialize()
         return self
@@ -53,7 +53,6 @@ class GeometryQL:
         if splits:
             workplane = split_workplane(workplane, splits(workplane), use_cache)
 
-        self._type_groups = CQLinq.groupByTypes(workplane, exclude_split=is_2d)
 
         if is_2d:
             # fuses top faces to appear as one Compound in GMSH
@@ -62,7 +61,10 @@ class GeometryQL:
             self._initial_workplane = cq.Workplane(fused_face)
         else:
             self._initial_workplane = workplane
-        
+
+        self._type_groups = CQLinq.groupByTypes(self._initial_workplane, exclude_split=is_2d)
+
+
         self._workplane = self._initial_workplane
         topods = self._workplane.toOCC()
         gmsh.model.occ.importShapesNativePointer(topods._address())
@@ -269,7 +271,12 @@ class GeometryQL:
             set_transfinite_face = SetTransfiniteFace(face, arrangement)
             self._ctx.add_transaction(set_transfinite_face)
         self._transfinite_edge_groups = self._getTransfiniteEdgeGroups(cq_faces)
-        for transfinite_group in self._transfinite_edge_groups:
+        
+        for i, transfinite_group in enumerate(self._transfinite_edge_groups):
+            for edge in transfinite_group:
+                for j, group in enumerate(self._transfinite_edge_groups):
+                    if i != j and edge in group:
+                        print("Found edge in multiple groups")
             total_length = sum([cq_edge.Length() for cq_edge in transfinite_group])
             group_max_num_nodes = 0
             for cq_edge in transfinite_group:
@@ -371,6 +378,13 @@ class GeometryQL:
             export_to_su2(self._ctx.mesh, filename)
         else:
             gmsh.write(filename)
+        return self
+
+    def showTransfiniteGroup(self, group_index: int):
+        assert self.is_structured, "Structured boundary layer can only be applied after setTransfiniteAuto"
+        assert group_index < len(self._transfinite_edge_groups), f"Group index {group_index} is out of range"
+        group = self._transfinite_edge_groups[group_index]
+        show(self._workplane.newObject(group), theme="dark")
         return self
 
     def show(self, type: Literal["gmsh", "mesh", "cq", "plot"] = "cq", only_markers: bool = False):

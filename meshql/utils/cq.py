@@ -8,9 +8,9 @@ import cadquery as cq
 from cadquery.cq import CQObject, VectorLike
 from typing import Callable, Iterable, Literal, Optional, Sequence, TypeVar, Union, cast
 import numpy as np
-from ezmesh.utils.plot import add_plot
-from ezmesh.utils.shapes import get_sampling
-from ezmesh.utils.types import OrderedSet, NumpyFloat
+from meshql.utils.plot import add_plot
+from meshql.utils.shapes import get_sampling
+from meshql.utils.types import OrderedSet, NumpyFloat
 from OCP.BRepTools import BRepTools
 from OCP.BRep import BRep_Builder
 from OCP.TopoDS import TopoDS_Shape
@@ -91,7 +91,7 @@ class CQLinq:
     def select(target: Union[cq.Workplane, Iterable[CQObject], CQObject], select_type: Optional[CQType] = None):
         cq_objs = target.vals() if isinstance(target, cq.Workplane) else (list(target) if isinstance(target, Iterable) else [target])
         
-        if type is None or CQ_TYPE_STR_MAPPING[type(cq_objs[0])] == select_type:
+        if type is None or len(cq_objs) > 0 and CQ_TYPE_STR_MAPPING[type(cq_objs[0])] == select_type:
             yield from cq_objs
         
         for cq_obj in cq_objs:
@@ -167,7 +167,6 @@ class CQLinq:
     @staticmethod
     def groupByTypes(target: Union[cq.Workplane, Sequence[CQObject]], only_faces=False, check_splits: bool = True, exclude_split: bool = False): 
         workplane = target if isinstance(target, cq.Workplane) else cq.Workplane().add(target)
-        assert CQExtensions.get_dimension(workplane) == 3, "workplane must be 3D"
 
         add_wire_to_group = lambda wires, group: group.update([
             *wires,
@@ -181,17 +180,23 @@ class CQLinq:
             "exterior": OrderedSet[CQObject](),
         }
         faces = list(CQLinq.select(target, "face"))
-        for face in faces:
-            assert isinstance(face, cq.Face), "object must be a face"
-            split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5))) if check_splits else False
-            is_interior = CQExtensions.is_interior_face(face) 
-            if split_intersect:
-                face_registry = groups["split"]
-            else:
-                face_registry = groups["interior" if is_interior else "exterior"]
-            face_registry.add(face)
-            if not only_faces:
-                add_wire_to_group(face.Wires(), face_registry)
+        is_2d = CQExtensions.get_dimension(workplane) == 2
+        if is_2d:
+            for face in faces:
+                add_wire_to_group(face.innerWires(), groups["interior"])
+                add_wire_to_group([face.outerWire()], groups["exterior"])
+        else:
+            for face in faces:
+                assert isinstance(face, cq.Face), "object must be a face"
+                split_intersect = CQExtensions.split_intersect(workplane, face.Center(), cq.Edge.makeLine(face.Center(), face.Center() + (face.normalAt()*1E-5))) if check_splits else False
+                is_interior = CQExtensions.is_interior_face(face) 
+                if split_intersect:
+                    face_registry = groups["split"]
+                else:
+                    face_registry = groups["interior" if is_interior else "exterior"]
+                face_registry.add(face)
+                if not only_faces:
+                    add_wire_to_group(face.Wires(), face_registry)
 
         if exclude_split:
             new_exterior = OrderedSet[CQObject]()
@@ -308,7 +313,7 @@ class CQExtensions:
         samples_per_spline: int = 50,
         ctx = None
     ):
-        from ezmesh.entity import CQEntityContext
+        from meshql.entity import CQEntityContext
         ctx = cast(CQEntityContext, ctx)
 
         fig = go.Figure(

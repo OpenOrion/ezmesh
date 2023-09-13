@@ -2,10 +2,10 @@ import uuid
 import gmsh
 from dataclasses import dataclass
 from typing import Optional, OrderedDict, Sequence, Union
-from ezmesh.entity import Entity
-from ezmesh.mesh.importers import import_from_gmsh
-from ezmesh.mesh.mesh import Mesh
-from ezmesh.utils.types import OrderedSet
+from meshql.entity import Entity
+from meshql.mesh.importers import import_from_gmsh
+from meshql.mesh.mesh import Mesh
+from meshql.utils.types import OrderedSet
 
 @dataclass
 class Transaction:
