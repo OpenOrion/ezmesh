@@ -1,11 +1,11 @@
-plotly==5.11.0
-ipywidgets==7.6
+plotly
+ipywidgets
 jupyterlab
 matplotlib
 
 numpy
 gmsh
 pythreejs
-git+https://github.com/Turbodesigner/su2fmt.git#egg=su2fmt
+git+https://github.com/OpenOrion/su2fmt.git#egg=su2fmt
 shapely
 scipy
