@@ -2,6 +2,7 @@
 
 <p align="center">the open source parametric CFD mesh generator</p>
 
+# Deprecated: Moving all development to MeshQL
 
 # About
 ezmesh is a declarative tool that parametrically generates meshes compliant with a variety of mesh formats with easy and configurable API on top of GMSH.
